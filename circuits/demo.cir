@@ -1,0 +1,14 @@
+# Bench Check demo circuit.
+# One part per line, in build order: step N is the circuit made of the first N parts.
+#   <name> <node> <node> <value>   # what to do in this step
+# Names starting with V are DC sources, names starting with R are resistors.
+# Values accept k and M suffixes (2.2k = 2200, 1M = 1000000). "gnd" is ground.
+# The source is the ESP32's 3.3 V pin, so no node can go above 3.3 V.
+
+V1  vcc  gnd  3.3    # Connect the ESP32's 3.3 V and GND pins to the breadboard rails
+R1  vcc  a    1k     # R1 (1k) from the 3.3 V rail to row A
+R2  a    gnd  2.2k   # R2 (2.2k) from row A to GND
+R3  a    b    1k     # R3 (1k) from row A to row B
+R4  b    gnd  2.2k   # R4 (2.2k) from row B to GND
+R5  b    c    4.7k   # R5 (4.7k) from row B to row C
+R6  c    gnd  10k    # R6 (10k) from row C to GND

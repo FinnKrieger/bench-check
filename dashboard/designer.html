@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Circuit Designer</title>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1d232b; --muted: #6b7480; --line: #dfe3e8;
+    --wire: #2b333d; --dot: #c3c9d1; --accent: #2f6fde; --probe: #d4a000;
+    --green: #1f9d55; --red: #d64545; --yellow: #d99a00; --grey: #9aa3ad;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161b; --card: #1b2128; --ink: #e6e9ed; --muted: #8d96a1; --line: #2c343d;
+      --wire: #d5dae0; --dot: #3d4651; --accent: #5b93f0; --probe: #f0c429;
+      --green: #3cc47c; --red: #f06a6a; --yellow: #f0b429; --grey: #6b7480;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+           padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--card); }
+  header h1 { margin: 0; font-size: 18px; }
+  header nav { display: flex; gap: 16px; align-items: center; font-size: 14px; }
+  header nav a { color: var(--accent); text-decoration: none; }
+  .conn { color: var(--muted); display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--grey); display: inline-block; }
+  .conn.on i { background: var(--green); }
+  main { max-width: 1400px; margin: 0 auto; padding: 16px 20px; display: grid; gap: 16px;
+         grid-template-columns: minmax(0, 1fr) 360px; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; padding: 12px 16px; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .card h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em;
+             color: var(--muted); font-weight: 600; }
+  .side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .tools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+  button, select, input { font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--card);
+                          color: var(--ink); border-radius: 8px; padding: 6px 10px; }
+  button { cursor: pointer; } button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .hint { padding: 8px 12px; border-radius: 8px; background: var(--bg); font-size: 14px; margin-bottom: 10px; }
+  #canvaswrap { overflow-x: auto; }
+  #canvas { width: 100%; min-width: 640px; height: auto; display: block; user-select: none; }
+  .dot { fill: var(--dot); } .hit { fill: transparent; cursor: crosshair; }
+  .hit:hover + .dot, .dot.start { fill: var(--accent); }
+  .erase .el:hover * { stroke: var(--red) !important; fill-opacity: 1; }
+  .erase .el { cursor: pointer; }
+  ol#order { margin: 0; padding: 0; list-style: none; font-size: 14px; }
+  #order li { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  #order li .n { width: 22px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  #order li .what { flex: 1; min-width: 0; }
+  #order li select { padding: 2px 4px; font-size: 13px; }
+  #order li button { padding: 1px 7px; font-size: 13px; }
+  .report { font-size: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .report .row { display: flex; gap: 8px; }
+  .report .row b { flex: none; }
+  .bad { color: var(--red); } .good { color: var(--green); } .muted { color: var(--muted); }
+  ul.tight { margin: 4px 0 0; padding-left: 18px; }
+  .name { display: flex; gap: 8px; margin-bottom: 10px; } .name input { flex: 1; min-width: 0; }
+  #usemsg { font-size: 14px; margin-top: 8px; }
+  .inv { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 10px; font-size: 13px; }
+  .inv label { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+  .inv input { width: 52px; padding: 2px 6px; font-size: 13px; }
+  .inv .left { color: var(--muted); font-size: 12px; }
+  .inv .out { color: var(--red); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Circuit Designer</h1>
+  <nav>
+    <a href="index.html?v=3" target="_blank">Dashboard ↗</a>
+    <a href="breadboard.html?v=3" target="_blank">Breadboard sim ↗</a>
+    <span class="conn" id="conn"><i></i><span>Connecting…</span></span>
+  </nav>
+</header>
+<main>
+  <section class="card">
+    <div class="tools" id="tools">
+      <button data-tool="R" class="on">Resistor</button>
+      <select id="value" title="Resistor value"></select>
+      <button data-tool="W">Wire</button>
+      <button data-tool="G">Ground</button>
+      <button data-tool="X">Erase</button>
+      <span style="flex:1"></span>
+      <button id="undo" title="Ctrl+Z">Undo</button>
+      <button id="clear">Clear</button>
+    </div>
+    <div class="hint" id="hint"></div>
+    <div id="canvaswrap"><svg id="canvas"></svg></div>
+  </section>
+  <div class="side">
+    <section class="card">
+      <h2>Use it</h2>
+      <div class="name"><input id="name" placeholder="circuit name" maxlength="40"><button class="primary" id="use">Use this circuit</button></div>
+      <div class="row" style="display:flex;gap:6px;flex-wrap:wrap">
+        <button id="load">Load the laptop's circuit</button>
+      </div>
+      <div id="usemsg" class="muted">Sends the design to the laptop. It re-plans the board and restarts the build at step 1.</div>
+    </section>
+    <section class="card">
+      <h2>My parts</h2>
+      <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px">
+        <input type="checkbox" id="limitparts" checked> Only use the resistors I have</label>
+      <div id="inventory" class="inv"></div>
+      <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-top:10px">
+        <input type="checkbox" id="usesocket" checked> Use the resistor test socket</label>
+      <div class="muted" id="socketnote" style="font-size:13px;margin-top:4px"></div>
+    </section>
+    <section class="card">
+      <h2>Build order</h2>
+      <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:8px">
+        <input type="checkbox" id="autoorder" checked> Always use the smartest build order</label>
+      <div id="ordernote" style="font-size:13px;margin-bottom:8px"></div>
+      <ol id="order"></ol>
+      <div class="muted" style="font-size:13px;margin-top:8px">The board is built and tested in this order, one part per step. The laptop picks the order that lets each step check the most; use the arrows to change it by hand.</div>
+    </section>
+    <section class="card">
+      <h2>Laptop's plan</h2>
+      <div class="report" id="report"><span class="muted">Draw a circuit to see the plan.</span></div>
+    </section>
+  </div>
+</main>
+
+<script>
+// ---------- model ----------
+// Dots on a grid, addressed [x, y]. The ESP32's 3.3 V supply is fixed: + at VCC_DOT, − at GND_DOT.
+// Parts and wires join two dots. Dots joined by wires (or marked ground) are one node.
+const COLS = 14, ROWS = 8, SP = 60, M = 50;
+const VCC_DOT = [1, 1], GND_DOT = [1, 6];
+const KIT = [100, 470, 1000, 2200, 4700, 10000, 22000, 47000, 100000];
+const fmtOhms = v => v >= 1e6 ? v / 1e6 + "M" : v >= 1e3 ? v / 1e3 + "k" : String(v);
+const key = d => d[0] + "," + d[1];
+const same = (a, b) => a[0] === b[0] && a[1] === b[1];
+const onSegment = (d, a, b) =>
+  (b[0] - a[0]) * (d[1] - a[1]) === (b[1] - a[1]) * (d[0] - a[0]) &&
+  d[0] >= Math.min(a[0], b[0]) && d[0] <= Math.max(a[0], b[0]) &&
+  d[1] >= Math.min(a[1], b[1]) && d[1] <= Math.max(a[1], b[1]);
+const $ = id => document.getElementById(id);
+
+let D = { parts: [], wires: [], grounds: [] };   // parts in build order: {value, a, b}
+let tool = "R", start = null, mouse = null, history = [];
+let plan = null, planReq = 0, laptopCircuit = null;
+
+// ---------- nodes from the drawing ----------
+function analyse() {
+  const parent = {};
+  const find = k => { while (parent[k] !== undefined && parent[k] !== k) k = parent[k]; return k; };
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[ra] = rb; };
+  const touch = k => { if (parent[k] === undefined) parent[k] = k; };
+  ["VCC", "GND"].forEach(touch);
+  touch(key(VCC_DOT)); union(key(VCC_DOT), "VCC");
+  touch(key(GND_DOT)); union(key(GND_DOT), "GND");
+  D.grounds.forEach(g => { touch(key(g)); union(key(g), "GND"); });
+  D.wires.forEach(w => { touch(key(w.a)); touch(key(w.b)); union(key(w.a), key(w.b)); });
+  D.parts.forEach(p => { touch(key(p.a)); touch(key(p.b)); });
+  // A dot that sits along a wire joins it, like a T-junction on paper. (A resistor's body
+  // passing over a dot does not connect to it: only its two ends do.)
+  const active = Object.keys(parent).filter(k => k.includes(",")).map(k => k.split(",").map(Number));
+  D.wires.forEach(w => active.forEach(d => { if (onSegment(d, w.a, w.b)) union(key(d), key(w.a)); }));
+
+  const errors = [], warnings = [];
+  if (find("VCC") === find("GND")) errors.push("The 3.3 V supply is wired straight to ground (a short).");
+
+  // name nodes in build order: vcc, gnd, then a, b, c...
+  const names = {}; let next = 0;
+  const nameOf = k => {
+    const r = find(k);
+    if (r === find("VCC")) return "vcc";
+    if (r === find("GND")) return "gnd";
+    if (!names[r]) names[r] = String.fromCharCode(97 + next++);
+    return names[r];
+  };
+  const parts = D.parts.map((p, i) => ({ ...p, name: `R${i + 1}`, na: nameOf(key(p.a)), nb: nameOf(key(p.b)) }));
+  // nodes named only by wires (no part yet) still need a stable label for drawing
+  const dotNode = {};
+  Object.keys(parent).filter(k => k.includes(",")).forEach(k => dotNode[k] = nameOf(k));
+
+  const uses = {};
+  parts.forEach(p => { uses[p.na] = (uses[p.na] || 0) + 1; uses[p.nb] = (uses[p.nb] || 0) + 1; });
+  parts.forEach(p => {
+    if (p.na === p.nb) errors.push(`${p.name}: both ends are on the same node, so it does nothing.`);
+  });
+  Object.entries(uses).forEach(([n, c]) => {
+    if (c === 1 && n !== "vcc" && n !== "gnd") {
+      const p = parts.find(p => p.na === n || p.nb === n);
+      warnings.push(`${p.name} has an end (node ${n.toUpperCase()}) that is not connected to anything else.`);
+    }
+  });
+  if (!parts.length) errors.push("Add at least one resistor.");
+  return { parts, dotNode, errors, warnings };
+}
+
+const label = n => n === "vcc" ? "3.3 V" : n === "gnd" ? "GND" : `node ${n.toUpperCase()}`;
+function toCir(A) {
+  const lines = ["# Made in the Bench Check designer. One part per line, in build order.",
+                 "V1  vcc  gnd  3.3    # Connect the ESP32's 3.3 V and GND pins to the breadboard rails"];
+  A.parts.forEach(p => lines.push(
+    `${p.name.padEnd(3)} ${p.na.padEnd(4)} ${p.nb.padEnd(4)} ${fmtOhms(p.value).padEnd(5)}  # ${p.name} (${fmtOhms(p.value)}) from ${label(p.na)} to ${label(p.nb)}`));
+  return lines.join("\n") + "\n";
+}
+
+// ---------- MQTT ----------
+const T = { preview: "benchcheck/design/preview", use: "benchcheck/design/use", plan: "benchcheck/design/plan",
+            circuit: "benchcheck/circuit" };
+const host = location.hostname || "localhost";
+const wsPort = new URLSearchParams(location.search).get("ws") || 9001;
+const client = mqtt.connect(`ws://${host}:${wsPort}`, { clientId: "benchcheck-designer-" + Math.random().toString(16).slice(2, 8) });
+client.on("connect", () => { setConn(true, "Laptop link online"); client.subscribe([T.plan, T.circuit], { qos: 1 }); requestPlan(); });
+client.on("close", () => setConn(false, "Disconnected, retrying…"));
+client.on("error", () => setConn(false, "Cannot reach the broker"));
+client.on("message", (topic, payload) => {
+  let d; try { d = JSON.parse(payload.toString()); } catch { return; }
+  if (topic === T.circuit) {
+    const first = !laptopCircuit;
+    laptopCircuit = d;
+    if (first && !hadDraft && !history.length && d.design) loadDesign(d.design, d.name);  // never over your edits
+  } else if (topic === T.plan && d.req === planReq) {
+    if (d.used) {
+      $("usemsg").innerHTML = `<span class="good">The laptop switched to <b>${esc(d.name)}</b>: step 1 of ${d.steps}.</span> ` +
+        `<a href="index.html?v=3" target="_blank" style="color:var(--accent)">Open the dashboard ↗</a>`;
+    } else if (d.used === false) {
+      $("usemsg").innerHTML = `<span class="bad">The laptop refused it: ${esc(d.error)}</span>`;
+    }
+    plan = d;
+    if (d.suggested_order && !d.used) offerOrder(d.suggested_order);
+    renderReport(); draw();
+  }
+});
+function setConn(on, text) { $("conn").classList.toggle("on", on); $("conn").querySelector("span").textContent = text; }
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+let planTimer = null;
+function requestPlan() {
+  clearTimeout(planTimer);
+  plan = null;  // the old plan describes the old drawing: never show it next to the new one
+  planTimer = setTimeout(() => {
+    const A = analyse();
+    if (A.errors.length || !client.connected) { plan = null; renderReport(); draw(); return; }
+    planReq++;
+    client.publish(T.preview, JSON.stringify({ req: planReq, cir: toCir(A), socket: useSocket() }));
+  }, 250);
+}
+
+$("use").onclick = () => {
+  const A = analyse();
+  if (A.errors.length) return;
+  planReq++;
+  $("usemsg").textContent = "Sending to the laptop…";
+  client.publish(T.use, JSON.stringify({ req: planReq, name: $("name").value || "my-circuit", cir: toCir(A), design: D, socket: useSocket() }), { qos: 1 });
+};
+$("load").onclick = () => {
+  if (!laptopCircuit) return;
+  if (laptopCircuit.design) loadDesign(laptopCircuit.design, laptopCircuit.name);
+  else $("usemsg").textContent = `The laptop's circuit (${laptopCircuit.name}) was written by hand, so there is no drawing to load.`;
+};
+
+// ---------- smarter build order ----------
+// The laptop suggests an order only when it beats the current one on the full plan.
+let pendingOrder = null;
+function orderGain(o) {
+  const parts = [];
+  const f = (label, [a, b]) => { if (a !== b) parts.push(`${label} ${a} → ${b}`); };
+  f("steps that check nothing", o.blind_steps); f("mistakes never visible", o.never_visible);
+  f("mistakes hidden at their own step", o.hidden_at_own_step);
+  return parts.join(", ");
+}
+function applyOrder(o) {
+  const idx = o.order.filter(n => n !== "V1").map(n => Number(n.slice(1)) - 1);
+  if (idx.length !== D.parts.length || idx.some(i => !(i in D.parts))) return;
+  snapshot();
+  D.parts = idx.map(i => D.parts[i]);
+  pendingOrder = null;
+  $("ordernote").innerHTML = `<span class="good">Reordered for better checking: ${esc(orderGain(o))}.</span>`;
+  commit();
+}
+function offerOrder(o) {
+  if ($("autoorder").checked) return applyOrder(o);
+  pendingOrder = o;
+  $("ordernote").innerHTML = `<span>A better order exists: ${esc(orderGain(o))}. </span>`;
+  const b = Object.assign(document.createElement("button"), { textContent: "Use it" });
+  b.onclick = () => pendingOrder && applyOrder(pendingOrder);
+  $("ordernote").append(b);
+}
+$("autoorder").onchange = () => {
+  try { localStorage.setItem("benchcheck-autoorder", $("autoorder").checked ? "1" : "0"); } catch {}
+  if ($("autoorder").checked && pendingOrder) applyOrder(pendingOrder);
+};
+try { $("autoorder").checked = localStorage.getItem("benchcheck-autoorder") !== "0"; } catch {}
+
+// ---------- editing ----------
+function commit() { save(); requestPlan(); renderAll(); }
+function snapshot() { history.push(JSON.stringify(D)); if (history.length > 100) history.shift(); }
+function loadDesign(design, name) {
+  snapshot();
+  D = { parts: design.parts || [], wires: design.wires || [], grounds: design.grounds || [] };
+  if (name) $("name").value = name;
+  commit();
+}
+function clickDot(d) {
+  if (tool === "G") {
+    if (same(d, GND_DOT)) return;
+    snapshot();
+    const i = D.grounds.findIndex(g => same(g, d));
+    if (i >= 0) D.grounds.splice(i, 1); else D.grounds.push(d);
+    return commit();
+  }
+  if (tool !== "R" && tool !== "W") return;
+  if (tool === "R" && !start && left(Number($("value").value)) <= 0) {   // say so before the first click lands
+    $("hint").textContent = `You have no ${fmtOhms(Number($("value").value))} left (see My parts). Pick another value.`;
+    return;
+  }
+  if (!start) { start = d; return renderAll(); }
+  if (same(start, d)) { start = null; return renderAll(); }
+  if (tool === "R" && left(Number($("value").value)) <= 0) {
+    $("hint").textContent = `You have no ${fmtOhms(Number($("value").value))} left (see My parts). Pick another value.`;
+    start = null; return draw();
+  }
+  snapshot();
+  if (tool === "R") D.parts.push({ value: Number($("value").value), a: start, b: d });
+  else D.wires.push({ a: start, b: d });
+  start = null;
+  commit();
+}
+function erase(kind, i) { snapshot(); D[kind].splice(i, 1); commit(); }
+function move(i, by) {
+  const j = i + by; if (j < 0 || j >= D.parts.length) return;
+  if ($("autoorder").checked) { $("autoorder").checked = false; try { localStorage.setItem("benchcheck-autoorder", "0"); } catch {} }
+  $("ordernote").textContent = "";
+  snapshot(); [D.parts[i], D.parts[j]] = [D.parts[j], D.parts[i]]; commit();
+}
+
+// ---------- my parts ----------
+// What is actually in the drawer. One 10k is the test socket's reference resistor.
+const SOCKET_REFERENCE = 10000;
+let inventory = { 10000: 3, 1000: 4, 4700: 3 };
+const useSocket = () => $("usesocket").checked;
+const have = v => Math.max(0, (inventory[v] || 0) - (useSocket() && v === SOCKET_REFERENCE ? 1 : 0));
+const used = v => D.parts.filter(p => p.value === v).length;
+const limiting = () => $("limitparts").checked;
+const left = v => limiting() ? have(v) - used(v) : Infinity;
+function shortages() {
+  if (!limiting()) return [];
+  return KIT.map(v => ({ value: v, need: used(v), have: have(v) })).filter(x => x.need > x.have);
+}
+function saveInventory() {
+  try { localStorage.setItem("benchcheck-inventory-2", JSON.stringify({ inventory, on: limiting(), socket: useSocket() })); } catch {}
+}
+try {
+  const s = JSON.parse(localStorage.getItem("benchcheck-inventory-2") || "null");
+  if (s && s.inventory) { inventory = s.inventory; $("limitparts").checked = s.on !== false; $("usesocket").checked = s.socket !== false; }
+} catch {}
+$("limitparts").onchange = () => { saveInventory(); renderAll(); };
+$("usesocket").onchange = () => { saveInventory(); commit(); };  // the laptop re-plans with or without it
+function renderInventory() {
+  $("socketnote").textContent = useSocket()
+    ? "The socket checks each resistor's value before it goes on the board. It takes one of your 10k as its reference resistor, so that 10k is not counted as free."
+    : "No test socket: no 10k is reserved, and the ESP32 pin it would use can measure the circuit instead.";
+  const box = $("inventory");
+  if (!box.childElementCount) {
+    KIT.forEach(v => {
+      const l = document.createElement("label");
+      l.innerHTML = `<span>${fmtOhms(v)}</span>`;
+      const inp = Object.assign(document.createElement("input"), { type: "number", min: 0, max: 99, value: inventory[v] || 0 });
+      inp.dataset.v = v;
+      inp.oninput = () => { inventory[v] = Math.max(0, Number(inp.value) || 0); saveInventory(); renderAll(); };
+      const tag = Object.assign(document.createElement("span"), { className: "left" });
+      l.append(inp, tag);
+      box.append(l);
+    });
+  }
+  box.querySelectorAll("label").forEach(l => {
+    const v = Number(l.querySelector("input").dataset.v), tag = l.querySelector(".left");
+    const free = have(v) - used(v);
+    const inSocket = useSocket() && v === SOCKET_REFERENCE && (inventory[v] || 0) > 0 ? " · 1 in socket" : "";
+    tag.textContent = limiting() ? `${Math.max(free, 0)} left${inSocket}` : inSocket.slice(3);
+    tag.className = "left" + (limiting() && free < 0 ? " out" : "");
+    if (limiting() && free < 0) tag.textContent = `${-free} short${inSocket}`;
+  });
+  // value picker: values with none left are greyed out; switch away from one that ran out
+  [...$("value").options].forEach(o => {
+    const v = Number(o.value), n = left(v);
+    o.disabled = n <= 0;
+    o.textContent = fmtOhms(v) + " Ω" + (limiting() ? (n > 0 ? ` (${n} left)` : " (none left)") : "");
+  });
+}
+
+document.querySelectorAll("#tools [data-tool]").forEach(b => b.onclick = () => { tool = b.dataset.tool; start = null; renderAll(); });
+KIT.forEach(v => $("value").add(new Option(fmtOhms(v) + " Ω", v)));
+$("value").value = 1000;
+$("value").onchange = () => { tool = "R"; renderAll(); };
+$("undo").onclick = undo;
+$("clear").onclick = () => { snapshot(); D = { parts: [], wires: [], grounds: [] }; commit(); };
+function undo() { if (!history.length) return; D = JSON.parse(history.pop()); start = null; commit(); }
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  if (e.key === "Escape") { start = null; renderAll(); }
+  if ((e.metaKey || e.ctrlKey) && e.key === "z") { e.preventDefault(); undo(); }
+});
+$("name").oninput = save;
+
+let hadDraft = false;
+function save() { try { localStorage.setItem("benchcheck-design", JSON.stringify({ D, name: $("name").value })); } catch {} }
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem("benchcheck-design") || "null");
+    if (s && s.D) { D = s.D; $("name").value = s.name || ""; hadDraft = true; }
+  } catch {}
+}
+
+// ---------- rendering ----------
+const XY = d => [M + d[0] * SP, M + d[1] * SP];
+const NS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text !== undefined) e.textContent = text;
+  if (parent) parent.append(e);
+  return e;
+}
+function zigzag(g, a, b, color, width) {
+  const [x1, y1] = XY(a), [x2, y2] = XY(b);
+  const L = Math.hypot(x2 - x1, y2 - y1), ux = (x2 - x1) / L, uy = (y2 - y1) / L, nx = -uy, ny = ux;
+  const half = Math.min(22, L / 2 - 4), mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  const pts = [[x1, y1], [mx - ux * half, my - uy * half]];
+  for (let i = 0; i < 6; i++) {
+    const t = -half + (i + 0.5) * (2 * half / 6), s = i % 2 ? -7 : 7;
+    pts.push([mx + ux * t + nx * s, my + uy * t + ny * s]);
+  }
+  pts.push([mx + ux * half, my + uy * half], [x2, y2]);
+  el("polyline", { points: pts.map(p => p.join(",")).join(" "), fill: "none", stroke: color, "stroke-width": width,
+                   "stroke-linejoin": "round", "stroke-linecap": "round" }, g);
+  return [mx, my, nx, ny];
+}
+function groundSymbol(svg, d) {
+  const [x, y] = XY(d);
+  const g = el("g", { stroke: "var(--wire)", "stroke-width": 2 }, svg);
+  el("line", { x1: x, y1: y, x2: x, y2: y + 12 }, g);
+  [[12, 12], [8, 17], [4, 22]].forEach(([w, dy]) => el("line", { x1: x - w, y1: y + dy, x2: x + w, y2: y + dy }, g));
+  return g;
+}
+
+function draw() {
+  const A = analyse();
+  const svg = $("canvas"); svg.innerHTML = "";
+  const W = M * 2 + (COLS - 1) * SP, H = M * 2 + (ROWS - 1) * SP;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  svg.classList.toggle("erase", tool === "X");
+
+  // fixed supply: the ESP32's 3.3 V between VCC_DOT and GND_DOT
+  const [vx, vy] = XY(VCC_DOT), [gx, gy] = XY(GND_DOT);
+  const sup = el("g", { stroke: "var(--wire)", "stroke-width": 2.4, fill: "none" }, svg);
+  const cy = (vy + gy) / 2;
+  el("line", { x1: vx, y1: vy, x2: vx, y2: cy - 20 }, sup); el("line", { x1: vx, y1: cy + 20, x2: gx, y2: gy }, sup);
+  el("circle", { cx: vx, cy, r: 20, fill: "var(--card)" }, sup);
+  el("text", { x: vx, y: cy - 4, "text-anchor": "middle", fill: "var(--wire)", stroke: "none", "font-size": 15, "font-weight": 700 }, sup, "+");
+  el("text", { x: vx, y: cy + 14, "text-anchor": "middle", fill: "var(--wire)", stroke: "none", "font-size": 15, "font-weight": 700 }, sup, "−");
+  el("text", { x: vx - 28, y: cy + 5, "text-anchor": "end", fill: "var(--muted)", stroke: "none", "font-size": 13 }, sup, "ESP32 3.3 V");
+  groundSymbol(svg, GND_DOT);
+
+  // wires
+  D.wires.forEach((w, i) => {
+    const g = el("g", { class: "el" }, svg);
+    const [x1, y1] = XY(w.a), [x2, y2] = XY(w.b);
+    el("line", { x1, y1, x2, y2, stroke: "transparent", "stroke-width": 14 }, g);
+    el("line", { x1, y1, x2, y2, stroke: "var(--wire)", "stroke-width": 2.4, "stroke-linecap": "round" }, g);
+    g.onclick = () => tool === "X" && erase("wires", i);
+  });
+  // grounds
+  D.grounds.forEach((d, i) => { const g = groundSymbol(svg, d); g.classList.add("el"); g.onclick = () => tool === "X" && erase("grounds", i); });
+
+  // resistors
+  A.parts.forEach((p, i) => {
+    const g = el("g", { class: "el" }, svg);
+    const [x1, y1] = XY(p.a), [x2, y2] = XY(p.b);
+    el("line", { x1, y1, x2, y2, stroke: "transparent", "stroke-width": 16 }, g);
+    const [mx, my, nx, ny] = zigzag(g, p.a, p.b, "var(--wire)", 2.4);
+    const side = Math.abs(nx) > 0.5 ? (nx > 0 ? 1 : -1) : 0;
+    const lx = mx + (side ? side * 16 : 0), ly = my + (side ? 4 : -14);
+    const anchor = side > 0 ? "start" : side < 0 ? "end" : "middle";
+    el("text", { x: lx, y: ly, "text-anchor": anchor, "font-size": 13, "font-weight": 700, fill: "var(--ink)" }, g,
+       `${p.name} ${fmtOhms(p.value)}`);
+    el("text", { x: lx, y: side ? ly + 15 : my + 24, "text-anchor": anchor, "font-size": 11, fill: "var(--muted)" }, g, `step ${i + 2}`);
+    g.onclick = () => tool === "X" && erase("parts", i);
+  });
+
+  // rubber band while placing
+  if (start && mouse) {
+    const [x1, y1] = XY(start);
+    el("line", { x1, y1, x2: mouse[0], y2: mouse[1], stroke: "var(--accent)", "stroke-width": 2, "stroke-dasharray": "5 4", "pointer-events": "none" }, svg);
+  }
+
+  // dots (with a larger invisible hit area)
+  const connected = new Set(Object.keys(A.dotNode));
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+    const d = [x, y], [cx, cy2] = XY(d);
+    const hit = el("circle", { cx, cy: cy2, r: 14, class: "hit" }, svg);
+    const isOn = connected.has(key(d)) || same(d, VCC_DOT) || same(d, GND_DOT);
+    el("circle", { cx, cy: cy2, r: isOn ? 5 : 3, class: "dot" + (start && same(start, d) ? " start" : ""),
+                   style: isOn ? "fill: var(--wire)" : "", "pointer-events": "none" }, svg);
+    hit.onclick = () => clickDot(d);
+  }
+
+  // node labels, voltages and test points from the laptop's plan
+  const shown = new Set();
+  const pinOf = plan && plan.pins ? Object.fromEntries(Object.entries(plan.pins).map(([pin, n]) => [n, pin])) : {};
+  const firstDot = {};
+  A.parts.forEach(p => { if (!firstDot[p.na]) firstDot[p.na] = p.a; if (!firstDot[p.nb]) firstDot[p.nb] = p.b; });
+  firstDot.vcc = VCC_DOT;
+  Object.entries(firstDot).forEach(([n, d]) => {
+    if (n === "gnd" || shown.has(n)) return; shown.add(n);
+    const [x, y] = XY(d);
+    const v = plan && plan.nodes ? plan.nodes[n] : undefined;
+    const txt = (n === "vcc" ? "3.3 V" : n.toUpperCase()) + (v === undefined ? "" : v === null ? " · floating" : n === "vcc" ? "" : ` · ${v.toFixed(2)} V`);
+    el("text", { x: x + 8, y: y - 10, "font-size": 13, "font-weight": 700, fill: "var(--accent)" }, svg, txt);
+    if (pinOf[n]) {
+      el("circle", { cx: x, cy: y, r: 10, fill: "none", stroke: "var(--probe)", "stroke-width": 3, "pointer-events": "none" }, svg);
+      el("text", { x: x + 8, y: y - 26, "font-size": 11, "font-weight": 700, fill: "var(--probe)" }, svg, `GPIO ${pinOf[n]}`);
+    }
+  });
+}
+$("canvas").addEventListener("mousemove", e => {
+  if (!start) return;
+  const r = $("canvas").getBoundingClientRect(), vb = $("canvas").viewBox.baseVal;
+  mouse = [(e.clientX - r.left) * vb.width / r.width, (e.clientY - r.top) * vb.height / r.height];
+  draw();
+});
+
+function renderHint() {
+  const t = { R: start ? "Click the dot for the resistor's other end. Esc cancels."
+                       : `Resistor (${fmtOhms(Number($("value").value))} Ω): click the dot for one end, then the other.`,
+              W: start ? "Click the dot to wire to. Esc cancels." : "Wire: click two dots to join them into one node.",
+              G: "Ground: click a dot to connect it to GND (click again to remove).",
+              X: "Erase: click a resistor, wire or ground symbol to remove it." }[tool];
+  $("hint").textContent = t;
+}
+
+function renderOrder() {
+  const A = analyse(), ol = $("order"); ol.innerHTML = "";
+  const li0 = document.createElement("li");
+  li0.innerHTML = `<span class="n">1.</span><span class="what">V1: plug in the ESP32 (power and probe wires)</span>`;
+  ol.append(li0);
+  A.parts.forEach((p, i) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="n">${i + 2}.</span><span class="what"><b>${p.name}</b> ${esc(label(p.na))} → ${esc(label(p.nb))}</span>`;
+    const sel = document.createElement("select");
+    KIT.forEach(v => {
+      const o = new Option(fmtOhms(v), v);
+      o.disabled = v !== D.parts[i].value && left(v) <= 0;
+      sel.add(o);
+    });
+    sel.value = D.parts[i].value;
+    sel.onchange = () => { snapshot(); D.parts[i].value = Number(sel.value); commit(); };
+    const up = Object.assign(document.createElement("button"), { textContent: "↑", title: "Build earlier", disabled: i === 0 });
+    const dn = Object.assign(document.createElement("button"), { textContent: "↓", title: "Build later", disabled: i === A.parts.length - 1 });
+    const rm = Object.assign(document.createElement("button"), { textContent: "✕", title: "Remove" });
+    up.onclick = () => move(i, -1); dn.onclick = () => move(i, 1); rm.onclick = () => erase("parts", i);
+    li.append(sel, up, dn, rm);
+    ol.append(li);
+  });
+}
+
+function renderReport() {
+  const A = analyse(), box = $("report");
+  const out = [];
+  A.errors.forEach(e => out.push(`<div class="bad">✕ ${esc(e)}</div>`));
+  const short = shortages();
+  if (short.length) out.push(`<div class="bad">✕ More resistors than you have: ${short.map(x => `${x.need} × ${fmtOhms(x.value)} (you have ${x.have})`).join(", ")}. Change values, or turn off "Only use the resistors I have".</div>`);
+  A.warnings.forEach(w => out.push(`<div style="color:var(--yellow)">! ${esc(w)}</div>`));
+  if (!A.errors.length && !client.connected) out.push(`<div class="muted">Waiting for the broker…</div>`);
+  else if (!A.errors.length && !plan) out.push(`<div class="muted">Updating the plan… (if this stays, is bench_server.py running?)</div>`);
+  if (!A.errors.length && plan) {
+    if (!plan.ok) out.push(`<div class="bad">✕ ${esc(plan.error)}</div>`);
+    else {
+      out.push(`<div class="good">✓ Fits the breadboard. ${plan.steps} build steps.</div>`);
+      out.push(`<div class="row"><b>Test points</b><span>${Object.entries(plan.pins).map(([pin, n]) => `${esc(label(n))} → GPIO ${pin}`).join(", ")}</span></div>`);
+      out.push(`<div class="row"><b>Mistakes simulated</b><span>${plan.faults_simulated}</span></div>`);
+      const idle = plan.no_current || [];
+      if (idle.length) {
+        const names = idle.length === 1 ? idle[0] : idle.slice(0, -1).join(", ") + " and " + idle[idle.length - 1];
+        const h = plan.no_current_hint;
+        out.push(`<div><b style="color:var(--yellow)">! No current flows through ${names} in the finished circuit.</b><div class="muted">A wrong value there cannot be caught, and a missing one often cannot either. Give that part of the circuit a path to GND or 3.3 V${h ? `, for example a resistor from ${esc(label(h.node))} to ${h.rail}` : ""}. You can still build it as it is.</div></div>`);
+      }
+      const blind = plan.blind_steps || [];
+      if (blind.length) out.push(`<div><b style="color:var(--yellow)">! Steps that check nothing:</b> ${blind.map(x => `step ${x.step} (${x.part})`).join(", ")}<div class="muted">Even a missing part would pass at that step. Either nothing it touches is connected to 3.3 V or GND yet, or it sits in parallel with a much smaller resistor that carries almost all the current. ${$("autoorder").checked ? "The order is already the best the laptop found, so this comes from the circuit itself: a larger value for the parallel resistor would fix it." : "Turn on the smartest build order, or move it after a part that connects one of its nodes."}</div></div>`);
+      const late = [...new Set((plan.checked_late || []).map(x => x.part))];
+      if (late.length) out.push(`<div><b>Value checked later:</b> ${late.join(", ")}<div class="muted">A wrong value on these would still pass at the step they go in, usually because no current flows through them yet. It shows up at a later step, or not at all if it is listed under "Never visible" below. Building the part that completes their path right after them keeps the delay short.</div></div>`);
+      if (plan.never_visible && plan.never_visible.length) out.push(`<div><b>Never visible with these test points (${plan.never_visible.length}):</b><ul class="tight">${plan.never_visible.slice(0, 6).map(s => `<li>${esc(s)}</li>`).join("")}</ul>${plan.never_visible.length > 6 ? `<span class="muted">and ${plan.never_visible.length - 6} more</span>` : ""}</div>`);
+      else out.push(`<div class="good">✓ Every simulated mistake is caught at its step or the next.</div>`);
+    }
+  }
+  if (!out.length) out.push(`<span class="muted">Draw a circuit to see the plan.</span>`);
+  box.innerHTML = out.join("");
+  $("use").disabled = !!A.errors.length || !(plan && plan.ok) || shortages().length > 0;
+}
+
+function renderAll() {
+  document.querySelectorAll("#tools [data-tool]").forEach(b => b.classList.toggle("on", b.dataset.tool === tool));
+  renderInventory(); renderHint(); renderOrder(); renderReport(); draw();
+}
+
+load();
+renderAll();
+requestPlan();
+</script>
+</body>
+</html>

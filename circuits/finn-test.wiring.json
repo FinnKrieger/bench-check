@@ -1,0 +1,19 @@
+{
+  "circuit": "finn-test.cir",
+  "tolerance": 0.15,
+  "pins": {
+    "7": "a",
+    "4": "vcc"
+  },
+  "socket": true,
+  "socket_pin": "10",
+  "keep_wires": false,
+  "place": {
+    "esp_row": 1,
+    "nodes": {
+      "a": 7
+    },
+    "socket_row": 35
+  },
+  "layout_version": 2
+}

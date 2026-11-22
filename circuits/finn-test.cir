@@ -1,0 +1,5 @@
+# Made in the Bench Check designer. One part per line, in build order.
+V1  vcc  gnd  3.3    # Connect the ESP32's 3.3 V and GND pins to the breadboard rails
+R1  vcc  a    1k     # R1 (1k) from 3.3 V to node A
+R2  gnd  a    4.7k   # R2 (4.7k) from GND to node A
+R3  vcc  gnd  10k    # R3 (10k) from 3.3 V to GND

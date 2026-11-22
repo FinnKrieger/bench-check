@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Breadboard Sim</title>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1d232b; --muted: #6b7480; --line: #dfe3e8;
+    --board: #f3f0e8; --board-edge: #d9d3c4; --hole: #4a4f57; --accent: #2f6fde;
+    --green: #1f9d55; --red: #d64545; --yellow: #d99a00; --grey: #9aa3ad;
+    --rail-pos: #d64545; --rail-neg: #2f6fde; --esp: #1f2933; --resistor: #d8b98a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161b; --card: #1b2128; --ink: #e6e9ed; --muted: #8d96a1; --line: #2c343d;
+      --board: #2a2c2f; --board-edge: #3a3d42; --hole: #0e1013; --accent: #5b93f0;
+      --green: #3cc47c; --red: #f06a6a; --yellow: #f0b429; --grey: #6b7480;
+      --rail-pos: #f06a6a; --rail-neg: #5b93f0; --esp: #0b0f14; --resistor: #c9a676;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+           padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--card); }
+  header h1 { margin: 0; font-size: 18px; }
+  header nav a { color: var(--accent); text-decoration: none; margin-left: 14px; font-size: 14px; }
+  .conn { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--grey); display: inline-block; }
+  .conn.on i { background: var(--green); }
+  main { max-width: 1300px; margin: 0 auto; padding: 16px 20px; display: grid; gap: 16px;
+         grid-template-columns: minmax(0, 1fr) 300px; }
+  @media (max-width: 1000px) { main { grid-template-columns: 1fr; padding: 12px 16px; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .card h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em;
+             color: var(--muted); font-weight: 600; }
+  .laptop { display: flex; gap: 14px; align-items: center; margin-bottom: 12px; }
+  .laptop .step { font-size: 13px; color: var(--muted); }
+  .laptop .instr { font-size: 17px; font-weight: 600; }
+  .hint { margin: 0 0 10px; padding: 8px 12px; border-radius: 8px; background: var(--bg); font-size: 14px; min-height: 20px; }
+  .hint.placing { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); font-weight: 600; }
+  #boardwrap { overflow-x: auto; }
+  #board { width: 100%; max-width: 620px; max-height: 92vh; height: auto; display: block; margin: 0 auto; user-select: none; }
+  .hole { fill: var(--hole); cursor: pointer; }
+  .hole:hover, .hole.net { fill: var(--accent); }
+  .hole.used { fill: var(--hole); opacity: .35; }
+  .part { cursor: pointer; }
+  .part.selected .leg, .part.selected .body { stroke: var(--accent); stroke-width: 3.5; }
+  .bin { display: flex; flex-wrap: wrap; gap: 6px; }
+  button { font: inherit; font-size: 14px; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+           border-radius: 8px; padding: 6px 10px; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .4; cursor: default; }
+  button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.big { width: 100%; padding: 12px; font-size: 16px; font-weight: 700; background: var(--ink); color: var(--card); border-color: var(--ink); }
+  .side { display: flex; flex-direction: column; gap: 16px; }
+  .led-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .led { width: 40px; height: 40px; border-radius: 50%; background: var(--grey); flex: none; transition: all .2s; }
+  .led.green { background: var(--green); box-shadow: 0 0 16px var(--green); }
+  .led.red { background: var(--red); box-shadow: 0 0 16px var(--red); }
+  .led.yellow { background: var(--yellow); box-shadow: 0 0 16px var(--yellow); }
+  #result { font-size: 14px; }
+  #parts { list-style: none; margin: 0; padding: 0; font-size: 14px; }
+  #parts li { display: flex; align-items: center; gap: 6px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  #parts li.selected { color: var(--accent); font-weight: 600; }
+  #parts li span { flex: 1; cursor: pointer; }
+  #parts button { padding: 2px 8px; font-size: 12px; }
+  .row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .sub { font-size: 12px; color: var(--muted); margin: 10px 0 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Breadboard Sim</h1>
+  <nav class="conn" id="conn"><i></i><span>Connecting…</span><a href="index.html?v=3" target="_blank">Open dashboard ↗</a></nav>
+</header>
+<main>
+  <section class="card">
+    <div class="laptop">
+      <div>
+        <div class="step" id="step">Laptop: waiting…</div>
+        <div class="instr" id="instr">Start bench_server.py so the laptop can tell you what to place.</div>
+      </div>
+    </div>
+    <p class="hint" id="hint">Pick something from the parts bin, then click breadboard holes to place it.</p>
+    <div id="boardwrap"><svg id="board" viewBox="0 0 1000 300"></svg></div>
+    <div class="sub">Parts bin <label style="float:right;font-size:13px;color:var(--ink)"><input type="checkbox" id="guide" checked> Show where the laptop wants the next part</label></div>
+    <div class="bin" id="bin"></div>
+  </section>
+  <div class="side">
+    <section class="card">
+      <h2>ESP32 board</h2>
+      <div class="led-row"><div class="led" id="led"></div><div id="result">No check yet</div></div>
+      <button class="big" id="btn">Test</button>
+      <div class="sub">The ESP32's push button. Take your hand off the board first.</div>
+    </section>
+    <section class="card" id="socketcard">
+      <h2>Resistor test socket</h2>
+      <div id="sockmsg" style="font-size:14px;font-weight:600;margin-bottom:8px">Waiting for the laptop…</div>
+      <div class="row" style="margin-top:0">
+        <select id="sockval"></select>
+        <button id="sockin">Put in socket</button>
+        <button id="sockout">Take out</button>
+      </div>
+      <div class="sub">The grey test-socket row to the − rail. Same as pushing a resistor into those holes.</div>
+    </section>
+    <section class="card">
+      <h2>On the breadboard</h2>
+      <ul id="parts"></ul>
+      <div class="row">
+        <button id="undo">Undo last</button>
+        <button id="clear">Clear board</button>
+      </div>
+      <div class="sub">Click a part to select it. "Loose" makes its legs wiggle in and out of contact.</div>
+    </section>
+  </div>
+</main>
+
+<script src="board.js?v=fix1"></script>
+<script>
+// The simulated breadboard and ESP32. You build the board by clicking holes; this page solves the
+// board with nodal analysis and sends the readings a real ESP32 would send.
+const { holeXY, netOf, holeName, fmtOhms } = BB;
+
+const S = {
+  circuit: null, status: null, result: null,
+  parts: [],              // {id, kind: "R"|"W"|"P3"|"PG", value, a, b, loose}
+  placing: null,          // {kind, value, first}
+  selected: null,
+  seq: 0, start: performance.now(),
+};
+let nextId = 1;
+const $ = id => document.getElementById(id);
+const layout = () => S.circuit && S.circuit.layout;
+const probes = () => {
+  const L = layout(); if (!L) return {};
+  return L.socket ? { ...L.probes, [L.socket.pin]: L.socket.probe } : L.probes;  // the socket pin is read too
+};
+
+const BIN = [
+  { kind: "P3", label: "ESP32 3.3 V wire" },
+  { kind: "PG", label: "ESP32 GND wire" },
+  ...[100, 470, 1000, 2200, 4700, 10000, 22000, 47000, 100000].map(v => ({ kind: "R", value: v, label: fmtOhms(v) })),
+  { kind: "W", label: "Jumper wire" },
+];
+
+// ---------- MQTT ----------
+const T = { readings: "benchcheck/readings", request: "benchcheck/check_request", result: "benchcheck/check_result",
+            status: "benchcheck/status", circuit: "benchcheck/circuit", socket: "benchcheck/socket" };
+const host = location.hostname || "localhost";
+const wsPort = new URLSearchParams(location.search).get("ws") || 9001;
+const client = mqtt.connect(`ws://${host}:${wsPort}`, { clientId: "benchcheck-breadboard-" + Math.random().toString(16).slice(2, 8) });
+client.on("connect", () => { setConn(true, "ESP32 (simulated) online"); client.subscribe([T.result, T.status, T.circuit, T.socket], { qos: 1 }); });
+client.on("close", () => setConn(false, "Disconnected, retrying…"));
+client.on("error", () => setConn(false, "Cannot reach the broker"));
+client.on("message", (topic, payload) => {
+  let d; try { d = JSON.parse(payload.toString()); } catch { return; }
+  if (topic === T.circuit) {
+    // A different circuit from the designer means a fresh board.
+    let last = null; try { last = localStorage.getItem("benchcheck-circuit"); } catch {}
+    if (last !== null && last !== d.name) { S.parts = []; S.result = null; $("led").className = "led"; $("result").textContent = "No check yet"; save(); }
+    try { localStorage.setItem("benchcheck-circuit", d.name); } catch {}
+    S.circuit = d;
+    $("socketcard").style.display = d.layout && d.layout.socket ? "" : "none";
+    const taken = new Set(Object.values(probes()));     // a probe wire owns its hole
+    S.parts = S.parts.filter(p => !taken.has(p.a) && !taken.has(p.b));
+    renderAll();
+  }
+  else if (topic === T.status) { S.status = d; renderLaptop(); draw(); syncSocketValue(); }
+  else if (topic === T.result) { S.result = d; renderLed(); }
+  else if (topic === T.socket) {
+    $("sockmsg").textContent = d.message;
+    $("sockmsg").style.color = d.result === "ok" ? "var(--green)" : d.result === "wrong" ? "var(--red)" : "var(--ink)";
+  }
+});
+function setConn(on, text) { $("conn").classList.toggle("on", on); $("conn").querySelector("span").textContent = text; }
+
+// ---------- physics: nodal analysis on the breadboard nets ----------
+// includeLoose(part) says whether a loose part makes contact right now; extra adds elements (the
+// ESP32's internal pull resistor on one pin).
+function solveBoard(includeLoose, extra = []) {
+  const VS = 3.3, WIRE = 0.01;
+  const els = [{ a: "esp:3v3", b: "esp:gnd", kind: "V", value: VS }, ...extra];
+  for (const p of S.parts) {
+    if (p.loose && !includeLoose(p)) continue;
+    els.push({ a: netOf(p.a), b: netOf(p.b), kind: "R", value: p.kind === "R" ? p.value : WIRE });
+  }
+  // nets with a path to the ESP32's ground; everything else floats
+  const adj = {};
+  els.forEach(e => { (adj[e.a] ||= new Set()).add(e.b); (adj[e.b] ||= new Set()).add(e.a); });
+  const seen = new Set(["esp:gnd"]), todo = ["esp:gnd"];
+  while (todo.length) for (const n of adj[todo.pop()] || []) if (!seen.has(n)) { seen.add(n); todo.push(n); }
+  const live = els.filter(e => seen.has(e.a) && seen.has(e.b) && e.a !== e.b);
+  const nodes = [...seen].filter(n => n !== "esp:gnd");
+  const idx = Object.fromEntries(nodes.map((n, i) => [n, i]));
+  const srcs = live.filter(e => e.kind === "V");
+  const N = nodes.length + srcs.length;
+  const A = Array.from({ length: N }, () => new Array(N + 1).fill(0));
+  for (const e of live) if (e.kind === "R") {
+    const g = 1 / e.value;
+    for (const [x, y] of [[e.a, e.b], [e.b, e.a]]) if (x in idx) {
+      A[idx[x]][idx[x]] += g; if (y in idx) A[idx[x]][idx[y]] -= g;
+    }
+  }
+  srcs.forEach((e, k) => {
+    const r = nodes.length + k;
+    if (e.a in idx) { A[idx[e.a]][r] += 1; A[r][idx[e.a]] += 1; }
+    if (e.b in idx) { A[idx[e.b]][r] -= 1; A[r][idx[e.b]] -= 1; }
+    A[r][N] = e.value;
+  });
+  for (let i = 0; i < N; i++) {          // Gaussian elimination with partial pivoting
+    let m = i; for (let r = i + 1; r < N; r++) if (Math.abs(A[r][i]) > Math.abs(A[m][i])) m = r;
+    [A[i], A[m]] = [A[m], A[i]];
+    if (Math.abs(A[i][i]) < 1e-12) continue;
+    for (let r = 0; r < N; r++) if (r !== i) {
+      const f = A[r][i] / A[i][i];
+      if (f) for (let c = i; c <= N; c++) A[r][c] -= f * A[i][c];
+    }
+  }
+  const v = { "esp:gnd": 0 };
+  nodes.forEach((n, i) => v[n] = Math.abs(A[i][i]) < 1e-12 ? 0 : A[i][N] / A[i][i]);
+  return v;
+}
+
+const stalePin = {};
+const gauss = () => { let u = 0, w = 0; while (!u) u = Math.random(); while (!w) w = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * w); };
+function publishReading() {
+  if (!S.circuit || !client.connected) return;
+  const contact = new Map(S.parts.map(p => [p, Math.random() < 0.5]));   // loose parts: fixed for this reading
+  const loose = p => contact.get(p);
+  const volts = solveBoard(loose);
+  const PULL = 45000;  // the ESP32's internal pull-up and pull-down
+  // Like the ESP32-S3 at 12 dB: 0-3.1 V full scale, raw counts plus factory-calibrated millivolts.
+  const ADC_MAX = 3.1;
+  // A floating pin reads a stale, steady-looking value (not noise); the pull-up / pull-down test
+  // swings it rail to rail, which is how the laptop knows it is unconnected. A driven pin stays put.
+  const raw = {}, mv = {}, up = {}, dn = {};
+  for (const [pin, hole] of Object.entries(probes())) {
+    const v = volts[netOf(hole)];
+    const stale = (stalePin[pin] ??= Math.random() * ADC_MAX);
+    const val = Math.max(0, Math.min(ADC_MAX, v === undefined ? stale + gauss() * 0.005 : v + gauss() * 0.01));
+    raw[pin] = Math.round(val / ADC_MAX * 4095);
+    mv[pin] = Math.round(val * 1000);
+    // the same pin read again with the pull-up (to the ESP32's 3.3 V), then the pull-down, switched on
+    const net = netOf(hole);
+    const withPull = to => {
+      const pv = solveBoard(loose, [{ a: net, b: to, kind: "R", value: PULL }])[net];
+      return Math.round(Math.max(0, Math.min(ADC_MAX, (pv ?? 0) + gauss() * 0.003)) * 1000);
+    };
+    up[pin] = withPull("esp:3v3");
+    dn[pin] = withPull("esp:gnd");
+  }
+  S.seq++;
+  client.publish(T.readings, JSON.stringify({ device: "breadboard-sim", seq: S.seq,
+    t_ms: Math.round(performance.now() - S.start), raw, mv, up, dn }), { qos: 0 });
+}
+// Browsers slow down timers in background tabs (down to once a minute), which would starve the
+// laptop of readings while the dashboard tab is in front. A timer inside a Web Worker keeps ticking.
+try {
+  const tick = new Worker(URL.createObjectURL(new Blob(["setInterval(() => postMessage(0), 200)"], { type: "text/javascript" })));
+  tick.onmessage = publishReading;
+} catch {
+  setInterval(publishReading, 200);
+}
+
+$("btn").onclick = () => {
+  client.publish(T.request, JSON.stringify({ device: "breadboard-sim", seq: S.seq, t_ms: Math.round(performance.now() - S.start) }), { qos: 1 });
+  $("result").textContent = "Testing…";
+};
+
+// ---------- placing parts ----------
+function usedHoles() {
+  const used = new Set(Object.values(probes()));
+  S.parts.forEach(p => { used.add(p.a); used.add(p.b); });
+  return used;
+}
+function startPlacing(item) { S.placing = { ...item, first: null }; S.selected = null; renderAll(); }
+function clickHole(id) {
+  if (!S.placing) return;
+  if (usedHoles().has(id) || S.placing.first === id) { hint("That hole is taken. Pick an empty one.", true); return; }
+  const pl = S.placing;
+  if (pl.kind === "P3" || pl.kind === "PG") addPart({ kind: pl.kind, a: pl.kind === "P3" ? "esp:3v3" : "esp:gnd", b: id });
+  else if (!pl.first) pl.first = id;
+  else addPart({ kind: pl.kind, value: pl.value, a: pl.first, b: id });
+  renderAll();
+}
+function addPart(p) { S.parts.push({ id: nextId++, loose: false, ...p }); S.placing = null; save(); }
+function removePart(id) { S.parts = S.parts.filter(p => p.id !== id); if (S.selected === id) S.selected = null; save(); renderAll(); }
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") { S.placing = null; S.selected = null; renderAll(); }
+  if ((e.key === "Backspace" || e.key === "Delete") && S.selected) removePart(S.selected);
+});
+$("undo").onclick = () => { S.parts.pop(); save(); renderAll(); };
+$("clear").onclick = () => { S.parts = []; S.selected = null; save(); renderAll(); };
+$("guide").onchange = () => { try { localStorage.setItem("benchcheck-guide", $("guide").checked ? "1" : "0"); } catch {} draw(); };
+
+function save() { try { localStorage.setItem("benchcheck-breadboard", JSON.stringify(S.parts)); } catch {} }
+function load() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("benchcheck-breadboard") || "[]");
+    if (Array.isArray(saved)) { S.parts = saved; nextId = Math.max(0, ...saved.map(p => p.id)) + 1; }
+    $("guide").checked = localStorage.getItem("benchcheck-guide") !== "0";
+  } catch {}
+}
+
+// ---------- rendering ----------
+function hint(text, warn) { const h = $("hint"); h.textContent = text; h.className = "hint" + (warn || S.placing ? " placing" : ""); }
+function partLabel(p) {
+  return p.kind === "R" ? `${fmtOhms(p.value)} resistor` : p.kind === "W" ? "Jumper wire"
+       : p.kind === "P3" ? "ESP32 3.3 V wire" : "ESP32 GND wire";
+}
+function renderAll() { renderBin(); renderHint(); renderParts(); renderLaptop(); draw(); }
+
+function renderHint() {
+  const pl = S.placing;
+  if (!pl) return hint("Pick something from the parts bin, then click breadboard holes to place it. Esc cancels.");
+  const what = partLabel(pl);
+  if (pl.kind === "P3" || pl.kind === "PG") hint(`${what}: click the hole to plug its free end into.`);
+  else hint(pl.first ? `${what}: first leg in ${holeName(pl.first)}. Now click the hole for the second leg.`
+                     : `${what}: click the hole for the first leg.`);
+}
+
+function renderBin() {
+  const bin = $("bin"); bin.innerHTML = "";
+  const placed = new Set(S.parts.map(p => p.kind));
+  BIN.forEach(item => {
+    const b = document.createElement("button");
+    b.textContent = item.label;
+    b.disabled = (item.kind === "P3" || item.kind === "PG") && placed.has(item.kind);
+    const active = S.placing && S.placing.kind === item.kind && S.placing.value === item.value;
+    if (active) b.classList.add("on");
+    b.onclick = () => active ? (S.placing = null, renderAll()) : startPlacing(item);
+    bin.append(b);
+  });
+}
+
+function renderParts() {
+  const ul = $("parts");
+  if (!S.parts.length) { ul.innerHTML = `<li style="color:var(--muted)">Nothing placed yet</li>`; return; }
+  ul.innerHTML = "";
+  S.parts.forEach(p => {
+    const li = document.createElement("li");
+    if (p.id === S.selected) li.className = "selected";
+    const s = document.createElement("span");
+    s.textContent = `${partLabel(p)}: ${holeName(p.a)} → ${holeName(p.b)}`;
+    s.onclick = () => { S.selected = p.id === S.selected ? null : p.id; renderAll(); };
+    const loose = document.createElement("button");
+    loose.textContent = p.loose ? "Loose ✓" : "Loose";
+    if (p.loose) loose.classList.add("on");
+    loose.onclick = () => { p.loose = !p.loose; save(); renderAll(); };
+    const rm = document.createElement("button");
+    rm.textContent = "Remove";
+    rm.onclick = () => removePart(p.id);
+    li.append(s, loose, rm);
+    ul.append(li);
+  });
+}
+
+function renderLaptop() {
+  const s = S.status; if (!s) return;
+  $("step").textContent = s.complete ? `Laptop: all ${s.total_steps} steps done` : `Laptop: step ${s.step} of ${s.total_steps}`;
+  $("instr").textContent = s.complete ? "Circuit complete." : (s.placement || s.instruction);
+}
+function renderLed() {
+  const r = S.result; if (!r) return;
+  $("led").className = "led " + r.led;
+  const msg = r.message;
+  $("result").textContent = `Step ${r.step}: ${r.result.toUpperCase()}. ${msg}`;
+}
+
+// The guide: where the laptop wants the current step, drawn faintly on the board.
+function guideParts() {
+  const c = S.circuit, s = S.status;
+  if (!$("guide").checked || !c || !c.layout || !s || s.complete) return [];
+  const p = c.parts[s.step - 1], [a, b] = c.layout.parts[p.name];
+  const sock = c.layout.socket;
+  return p.kind === "V"
+    ? [{ kind: "P3", a: "esp:3v3", b: a, state: "future" }, { kind: "PG", a: "esp:gnd", b, state: "future" },
+       ...(sock ? [{ kind: "R", label: BB.fmtOhms(sock.reference_ohms), a: sock.reference[0], b: sock.reference[1], state: "future" }] : []),
+       ...(c.layout.jumpers || []).map(j => ({ kind: "W", a: j.holes[0], b: j.holes[1], state: "future" }))]
+    : [{ kind: "R", label: p.value, a, b, state: "future" }];
+}
+
+function draw() {
+  const parts = [
+    ...guideParts(),
+    ...S.parts.map(p => ({ ...p, state: p.id === S.selected ? "selected" : "done" })),
+  ];
+  BB.draw($("board"), {
+    layout: layout(), parts, usedHoles: usedHoles(), firstHole: S.placing && S.placing.first,
+    onHole: clickHole, onPart: id => { S.selected = id === S.selected ? null : id; renderAll(); },
+    highlight: guideParts().flatMap(p => [p.a, p.b]).filter(h => !h.startsWith("esp:")),
+  });
+}
+$("board").addEventListener("click", e => { if (e.target.id === "board" && S.selected) { S.selected = null; renderAll(); } });
+
+// ---------- test socket shortcut ----------
+BIN.filter(b => b.kind === "R").forEach(b => $("sockval").add(new Option(b.label, b.value)));
+function socketPart() { const s = layout() && layout().socket; return s && S.parts.find(p => p.a === s.test[0] && p.b === s.test[1]); }
+$("sockin").onclick = () => {
+  const s = layout() && layout().socket; if (!s) return;
+  const old = socketPart(); if (old) S.parts = S.parts.filter(p => p !== old);
+  S.parts.push({ id: nextId++, kind: "R", value: Number($("sockval").value), a: s.test[0], b: s.test[1], loose: false });
+  save(); renderAll();
+};
+$("sockout").onclick = () => { const old = socketPart(); if (old) { S.parts = S.parts.filter(p => p !== old); save(); renderAll(); } };
+function syncSocketValue() {   // preselect the value the current step needs
+  const c = S.circuit, s = S.status; if (!c || !s || s.complete) return;
+  const p = c.parts[s.step - 1]; if (!p || p.kind !== "R") return;
+  const v = { "100": 100, "470": 470, "1k": 1000, "2.2k": 2200, "4.7k": 4700, "10k": 10000, "22k": 22000, "47k": 47000, "100k": 100000 }[p.value];
+  if (v) $("sockval").value = v;
+}
+
+load();
+renderAll();
+</script>
+</body>
+</html>

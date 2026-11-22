@@ -1,0 +1,764 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bench Check</title>
+<script src="https://cdn.jsdelivr.net/npm/mqtt@5.10.1/dist/mqtt.min.js"></script>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #1d232b; --muted: #6b7480; --line: #dfe3e8;
+    --wire: #2b333d; --faded: #c3c9d1; --accent: #2f6fde;
+    --green: #1f9d55; --red: #d64545; --yellow: #d99a00; --grey: #9aa3ad;
+    --board: #f3f0e8; --board-edge: #d9d3c4; --hole: #4a4f57; --rail-pos: #d64545; --rail-neg: #2f6fde;
+    --esp: #1f2933; --resistor: #d8b98a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161b; --card: #1b2128; --ink: #e6e9ed; --muted: #8d96a1; --line: #2c343d;
+      --wire: #d5dae0; --faded: #3d4651; --accent: #5b93f0;
+      --green: #3cc47c; --red: #f06a6a; --yellow: #f0b429; --grey: #6b7480;
+      --board: #2a2c2f; --board-edge: #3a3d42; --hole: #0e1013; --rail-pos: #f06a6a; --rail-neg: #5b93f0;
+      --esp: #0b0f14; --resistor: #c9a676;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+           padding: 14px 20px; border-bottom: 1px solid var(--line); background: var(--card); }
+  header h1 { margin: 0; font-size: 18px; }
+  .conn { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--grey); display: inline-block; }
+  .conn.on i { background: var(--green); }
+  main { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 16px;
+         padding: 16px 20px; max-width: 1400px; margin: 0 auto; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; padding: 12px 16px; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+  .left { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .bbtools { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .bbtools button { padding: 5px 10px; font-size: 14px; }
+  .bbtools button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .bbnote { font-size: 14px; min-height: 0; margin-bottom: 6px; }
+  .bbnote:empty { display: none; }
+  .bbnote.bad { color: var(--red); font-weight: 600; } .bbnote.good { color: var(--green); }
+  #bb { touch-action: none; }
+  #bbwrap { overflow-x: auto; } #bb { width: 100%; max-width: 560px; max-height: 88vh; height: auto; display: block; margin: 0 auto; }
+  .stages { max-width: 1400px; margin: 16px auto 0; padding: 0 20px; display: grid; gap: 10px;
+            grid-template-columns: repeat(4, minmax(0, 1fr)); counter-reset: stage; }
+  @media (max-width: 900px) { .stages { grid-template-columns: 1fr 1fr; padding: 0 16px; } }
+  .alarm { max-width: 1400px; margin: 16px auto 0; padding: 0 20px; }
+  .alarm div { background: var(--red); color: #fff; border-radius: 10px; padding: 16px 20px; font-size: 20px;
+               font-weight: 700; display: flex; gap: 14px; align-items: center; }
+  .alarm div span { font-size: 15px; font-weight: 500; opacity: .95; }
+  .alarm.ok div { background: none; color: var(--green); padding: 0; font-size: 14px; font-weight: 600; }
+  .stage { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+           border-top: 4px solid var(--line); }
+  .stage b { display: block; font-size: 14px; }
+  a.stage { color: inherit; text-decoration: none; } a.stage:hover { border-color: var(--accent); } .stage span { font-size: 13px; color: var(--muted); }
+  .stage b::before { counter-increment: stage; content: counter(stage) ". "; }
+  .stage.done { border-top-color: var(--green); } .stage.done b::after { content: " ✓"; color: var(--green); }
+  .stage.active { border-top-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .placement { font-size: 18px; font-weight: 600; margin: 2px 0 0; }
+  .sock { font-size: 16px; font-weight: 600; padding: 10px 12px; border-radius: 8px; background: var(--bg); }
+  .sock.ok { color: var(--green); } .sock.wrong { color: var(--red); } .sock .v { display: block; font-size: 13px; font-weight: 400; color: var(--muted); margin-top: 2px; }
+  .why { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  button.test { font-size: 17px; padding: 10px 26px; }
+  .card h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em;
+             color: var(--muted); font-weight: 600; }
+  #schematic svg { width: 100%; height: auto; display: block; }
+  .side { display: flex; flex-direction: column; gap: 16px; }
+  .status { display: flex; gap: 16px; align-items: center; }
+  .led { width: 64px; height: 64px; border-radius: 50%; flex: none; background: var(--grey);
+         box-shadow: 0 0 0 6px color-mix(in srgb, var(--grey) 20%, transparent); transition: all .2s; }
+  .led.green { background: var(--green); box-shadow: 0 0 0 6px color-mix(in srgb, var(--green) 25%, transparent); }
+  .led.red { background: var(--red); box-shadow: 0 0 0 6px color-mix(in srgb, var(--red) 25%, transparent); }
+  .led.yellow { background: var(--yellow); box-shadow: 0 0 0 6px color-mix(in srgb, var(--yellow) 25%, transparent); }
+  .step { font-size: 13px; color: var(--muted); }
+  .instruction { font-size: 18px; font-weight: 600; margin: 2px 0 0; }
+  .message { margin: 12px 0 0; padding: 10px 12px; border-radius: 8px; background: var(--bg); min-height: 22px; }
+  .message.fail { color: var(--red); } .message.pass { color: var(--green); } .message.unsure { color: var(--yellow); }
+  .suspects { margin: 8px 0 0; padding-left: 22px; font-size: 15px; }
+  .suspects li { margin-bottom: 6px; }
+  .suspects .act { font-size: 13px; color: var(--muted); }
+  .suspects li.ruled .lbl { text-decoration: line-through; color: var(--muted); }
+  .suspects li.ruled .ck { color: var(--green); font-weight: 700; margin-right: 4px; }
+  .suspects li.found .lbl { color: var(--red); font-weight: 700; }
+  .wrong-note { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  #cont[hidden] { display: none; }
+  #cont { margin-top: 8px; display: flex; gap: 10px; align-items: center; font-size: 13px; }
+  .buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+           border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--grey); }
+  .dot.ok { background: var(--green); } .dot.bad { background: var(--red); } .dot.warn { background: var(--yellow); }
+  .pnote { font-size: 12px; color: var(--muted); }
+  #history { list-style: none; margin: 0; padding: 0; font-size: 14px; max-height: 260px; overflow: auto; }
+  #history li { padding: 6px 0; border-bottom: 1px solid var(--line); display: flex; gap: 8px; }
+  #history .t { color: var(--muted); flex: none; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); font-size: 14px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 10px; font-size: 13px; color: var(--muted); }
+  .legend span { display: flex; align-items: center; gap: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Bench Check</h1>
+  <div style="display:flex;gap:16px;align-items:center">
+    <a href="designer.html?v=3" target="_blank" style="color:var(--accent);text-decoration:none;font-size:14px">Designer ↗</a>
+    <a href="breadboard.html?v=3" target="_blank" style="color:var(--accent);text-decoration:none;font-size:14px">Breadboard sim ↗</a>
+    <div class="conn" id="conn"><i></i><span>Connecting to broker…</span></div>
+  </div>
+</header>
+<div class="alarm" id="alarm" hidden></div>
+<div class="stages" id="stages">
+  <a class="stage" id="st1" href="designer.html?v=3" target="_blank"><b>Design the circuit</b><span id="st1t">Open the designer ↗</span></a>
+  <div class="stage" id="st2"><b>Laptop plans the board</b><span id="st2t">Solves every step and picks the test points</span></div>
+  <div class="stage" id="st3"><b>Plug in the ESP32</b><span>Power wires and probe wires, before any part</span></div>
+  <div class="stage" id="st4"><b>Build and test</b><span id="st4t">One part at a time: place it, hands off, press Test</span></div>
+</div>
+<main>
+  <div class="left">
+  <section class="card">
+    <h2>Breadboard: copy this</h2>
+    <div class="bbtools">
+      <button id="z-follow" class="on" title="Zoom to the holes for this step">Follow step</button>
+      <button id="z-all">Whole board</button>
+      <button id="z-in" title="Zoom in">+</button>
+      <button id="z-out" title="Zoom out">−</button>
+      <span style="flex:1"></span>
+      <button id="z-reset" title="Put the ESP32, nodes and test socket back where the laptop places them">Reset layout</button>
+      <button id="z-edit" title="Drag the ESP32 or a node to another row">Edit layout</button>
+    </div>
+    <div class="bbnote" id="bbnote"></div>
+    <div id="bbwrap"><svg id="bb"></svg></div>
+    <div class="legend">
+      <span style="color:var(--accent)">━ place this now</span>
+      <span style="color:var(--green)">━ confirmed</span>
+      <span style="color:var(--yellow)">━ in place, value not confirmed yet</span>
+      <span style="color:var(--ink)">━ placed, nothing could check it yet</span>
+      <span>faded = later steps · faded brown resistor = test socket, empty</span>
+      <span style="color:#e0b000">◯ ESP32 probe wire (GPIO number)</span>
+      <span>tinted strip = one node: any hole in it works</span>
+    </div>
+  </section>
+  <section class="card" id="schematic">
+    <h2>Circuit</h2>
+    <div id="svgwrap"><p class="empty">Waiting for the laptop node to publish the circuit…</p></div>
+    <div class="legend">
+      <span><i class="dot ok"></i> reads correctly</span>
+      <span><i class="dot bad"></i> wrong voltage</span>
+      <span><i class="dot"></i> not checked at this step</span>
+      <span style="color:var(--accent)">━ place this part now</span>
+      <span style="color:var(--green)">━ confirmed</span>
+      <span style="color:var(--yellow)">━ in place, value not confirmed yet</span>
+      <span style="color:var(--ink)">━ placed, nothing could check it yet</span>
+    </div>
+  </section>
+  </div>
+  <div class="side">
+    <section class="card">
+      <div class="status">
+        <div class="led" id="led"></div>
+        <div>
+          <div class="step" id="step">Step – of –</div>
+          <p class="placement" id="instruction">Waiting for the laptop node…</p>
+          <div class="why" id="why"></div>
+        </div>
+      </div>
+      <div class="message" id="message">Place the part, take your hand off the board, then press Test.</div>
+      <ol class="suspects" id="also" hidden></ol>
+      <div class="muted" id="alsotail" style="font-size:13px" hidden></div>
+      <div class="wrong-note" id="wrongnote" hidden>Bench Check can be wrong. If the board matches the picture, press Skip step.</div>
+      <div id="cont" hidden><button id="btn-continue">Continue anyway ▶</button>
+        <span class="muted">This test is rougher than the voltage check. If the parts look right, go on.<span id="cont-cal"> It is rougher still on an ESP32 that has not been calibrated (see Resistor check).</span></span></div>
+      <div class="buttons">
+        <button class="primary test" id="btn-check">Test</button>
+        <button id="btn-back">◀ Back a step</button>
+        <button id="btn-skip">Skip step ▶</button>
+        <button id="btn-restart">Restart</button>
+      </div>
+    </section>
+    <section class="card" id="socketcard">
+      <h2 style="display:flex;align-items:center;gap:10px">Resistor check
+        <label style="margin-left:auto;font-size:13px;font-weight:400;cursor:pointer" title="Off: no test socket and no 10k reference resistor on the board">
+          <input type="checkbox" id="socket-on" checked> On</label></h2>
+      <div class="sock" id="sock"><span class="muted">Waiting for the ESP32…</span></div>
+      <div class="muted" id="sockhelp" style="font-size:13px;margin-top:6px"></div>
+      <div id="calbox" style="font-size:13px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line, rgba(128,128,128,.25))" hidden>
+        <span class="muted" id="calstate"></span>
+        <button id="cal-start" style="font-size:12px;padding:3px 9px;margin-left:6px">Calibrate this ESP32</button>
+        <div id="calrun" hidden>
+          <div style="margin:8px 0 4px"><b>Calibrating.</b> Put a resistor you know in the test socket, wait for its tick, then the next one. Use at least 3 different values (1k, 4.7k and 10k work well), and leave the socket empty once.</div>
+          <div id="caldone" style="margin:6px 0"></div>
+          <button id="cal-save" disabled>Save</button> <button id="cal-cancel">Cancel</button>
+        </div>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Test points (live)</h2>
+      <table>
+        <thead><tr><th></th><th>Node</th><th>ESP32 pin</th><th>Measured</th><th>Expected</th></tr></thead>
+        <tbody id="points"><tr><td colspan="5" class="empty">No readings yet</td></tr></tbody>
+      </table>
+    </section>
+    <section class="card">
+      <h2>Check history</h2>
+      <ul id="history"><li class="empty">No checks yet</li></ul>
+    </section>
+  </div>
+</main>
+
+<script src="board.js?v=fix1"></script>
+<script>
+const T = {
+  result: "benchcheck/check_result", status: "benchcheck/status", circuit: "benchcheck/circuit",
+  live: "benchcheck/live", request: "benchcheck/check_request", control: "benchcheck/control",
+  socket: "benchcheck/socket", readings: "benchcheck/readings", layoutResult: "benchcheck/layout_result", calibration: "benchcheck/calibration",
+};
+const STALE_MS = 2000;
+
+const state = { circuit: null, status: null, live: null, liveAt: 0, result: null, history: [] };
+const $ = id => document.getElementById(id);
+
+// ---------- MQTT ----------
+const host = location.hostname || "localhost";
+const wsPort = new URLSearchParams(location.search).get("ws") || 9001;
+const client = mqtt.connect(`ws://${host}:${wsPort}`, { clientId: "benchcheck-dashboard-" + Math.random().toString(16).slice(2, 8) });
+client.on("connect", () => {
+  setConn(true, `Connected to ${host}:${wsPort}`);
+  client.subscribe([T.result, T.status, T.circuit, T.live, T.socket, T.readings, T.layoutResult, T.calibration], { qos: 1 });
+});
+client.on("close", () => setConn(false, "Disconnected, retrying…"));
+client.on("error", () => setConn(false, "Cannot reach the broker (is mosquitto running?)"));
+client.on("message", (topic, payload) => {
+  let data;
+  try { data = JSON.parse(payload.toString()); } catch { return; }
+  if (topic === T.circuit) {
+    if (state.circuit && state.circuit.name !== data.name) { state.result = null; state.history = []; }
+    state.circuit = data; renderAll();
+  }
+  else if (topic === T.status) { state.status = data; renderAll(); }
+  else if (topic === T.calibration) { state.cal = data; renderCalibration(); }
+  else if (topic === T.layoutResult) {
+    $("bbnote").className = "bbnote " + (data.ok ? "good" : "bad");
+    $("bbnote").textContent = data.ok ? (view.resetting ? "Layout reset: the laptop placed everything again."
+                                                        : "Layout moved. The instructions and wires above follow the new placement.")
+                                      : "Can't move it there: " + data.error;
+    if (!data.ok) renderBoard();   // put the dragged part back where it was
+  }
+  else if (topic === T.readings) { state.readingAt = Date.now(); state.readingDevice = data.device; }
+  else if (topic === T.live) { state.live = data; state.liveAt = Date.now(); renderLive(); }
+  else if (topic === T.socket) {
+    const changed = !state.socket || state.socket.result !== data.result || state.socket.part !== data.part;
+    state.socket = data; state.socketAt = Date.now(); renderSocket();
+    if (changed) renderBoard();
+  }
+  else if (topic === T.result) {
+    state.result = data;
+    // a re-published result (the test socket settled a suspect) updates the newest line, not a new one
+    if (data.updated && state.history.length) state.history[0] = { ...state.history[0], ...data };
+    else state.history.unshift({ t: new Date(), ...data });
+    state.history = state.history.slice(0, 30);
+    renderAll();
+  }
+});
+
+function setConn(on, text) {
+  $("conn").classList.toggle("on", on);
+  $("conn").querySelector("span").textContent = text;
+}
+
+$("btn-check").onclick = () =>
+  client.publish(T.request, JSON.stringify({ device: "dashboard", seq: 0, t_ms: 0 }), { qos: 1 });
+const setStep = n => client.publish(T.control, JSON.stringify({ cmd: "set_step", step: n }), { qos: 1 });
+$("btn-back").onclick = () => state.status && setStep(state.status.step - 1);
+$("btn-skip").onclick = () => state.status && setStep(state.status.step + 1);
+$("btn-continue").onclick = $("btn-skip").onclick;
+$("btn-restart").onclick = () => setStep(1);
+
+setInterval(() => { renderLive(); renderSocket(); renderAlarm(); }, 500);  // notice when readings stop
+
+// Big red banner when something in the chain is missing: broker, ESP32, or the laptop node.
+function renderAlarm() {
+  const box = $("alarm"), now = Date.now();
+  const esp = state.readingAt && now - state.readingAt < 3000;
+  const laptop = state.liveAt && now - state.liveAt < 3000;
+  let msg = null;
+  if (!client.connected) msg = ["No connection to the broker", "Is mosquitto running on this laptop?"];
+  else if (!esp) msg = ["ESP32 not connected",
+    state.readingAt ? `No readings for ${Math.round((now - state.readingAt) / 1000)} s. Check its power, Wi-Fi, and the laptop's IP in credentials.h.`
+                    : "No readings from the ESP32 yet. Check its power, Wi-Fi, and the laptop's IP in credentials.h."];
+  else if (!laptop) msg = ["Laptop node not running", "The ESP32 is sending, but bench_server.py is not answering. Start it."];
+  box.hidden = false;
+  box.className = "alarm" + (msg ? "" : " ok");
+  box.innerHTML = msg ? `<div>⚠ ${msg[0]}<span>${msg[1]}</span></div>`
+                      : `<div>● ESP32 online${state.readingDevice === "breadboard-sim" ? " (the breadboard sim)" : ""}</div>`;
+}
+
+// ---------- helpers ----------
+const fmtV = v => v == null ? "–" : v.toFixed(2) + " V";
+function currentStep() {
+  if (!state.status) return 1;
+  return state.status.complete ? state.status.total_steps + 1 : state.status.step;
+}
+function liveFresh() { return state.live && Date.now() - state.liveAt < STALE_MS; }
+// The last check is only shown while it is about the step we are on.
+function relevantResult() {
+  const r = state.result;
+  if (!r) return null;
+  const cur = currentStep(), s = state.status;
+  // on a finished circuit, Test checks the whole board again and reports it as the last step
+  if (s && s.complete && r.step === s.total_steps) return r;
+  return (r.step === cur || (r.result === "pass" && r.next_step === cur)) ? r : null;
+}
+
+// What the passed steps have confirmed about each placed part:
+// "checked" (green), "connected" (amber: right rows, value not confirmed) or "unchecked".
+function partStatus() {
+  const c = state.circuit;
+  const st = { ...((c && c.part_status && c.part_status[String(currentStep() - 1)]) || {}) };
+  // a value the resistor test socket measured is confirmed, even where the board cannot see it
+  const checked = new Set((state.status && state.status.value_checked) || []);
+  for (const p in st) if (st[p] === "value" && checked.has(p)) st[p] = "checked";
+  return st;
+}
+
+// The ESP32's pull resistors differ from chip to chip. A calibration run measures them once with
+// known resistors in the test socket; the laptop keeps the result for every circuit after that.
+function renderCalibration() {
+  const c = state.cal;
+  $("calbox").hidden = !c || !c.socket;
+  $("cont-cal").hidden = !c || c.calibrated;
+  if (!c) return;
+  $("calrun").hidden = !c.active;
+  $("cal-start").hidden = c.active;
+  $("calstate").textContent = c.active ? "" : c.calibrated ? `Calibrated for this ESP32 (${c.when}).`
+    : "Not calibrated for this ESP32: the resistance test may give false alarms.";
+  $("cal-start").textContent = c.calibrated ? "Calibrate again" : "Calibrate this ESP32";
+  if (c.active) {
+    const done = (c.done || []).map(n => `<span style="color:var(--green)">✓ ${n}</span>`);
+    if (c.current && !(c.done || []).includes(c.current)) done.push(`<span class="muted">reading ${c.current}…</span>`);
+    $("caldone").innerHTML = done.join(" &nbsp; ") || `<span class="muted">Nothing measured yet.</span>`;
+    $("cal-save").disabled = !c.ready;
+  }
+}
+const calibrate = action => client.publish(T.control, JSON.stringify({ cmd: "calibrate", action }), { qos: 1 });
+$("cal-start").onclick = () => calibrate("start");
+$("cal-save").onclick = () => calibrate("save");
+$("cal-cancel").onclick = () => calibrate("cancel");
+
+const fmtOhmsLive = o => o >= 1000 ? (o / 1000).toFixed(2) + " kΩ" : Math.round(o) + " Ω";
+function renderSocket() {
+  const s = state.socket, box = $("sock");
+  if (!state.circuit || !state.circuit.layout) { $("socketcard").style.display = "none"; return; }
+  $("socketcard").style.display = "";
+  const on = !!state.circuit.layout.socket;
+  $("socket-on").checked = on; $("socket-on").disabled = false;
+  box.style.display = on ? "" : "none";
+  $("sockhelp").textContent = on
+    ? "Before placing a resistor, push it into the test socket (the grey row in the picture, to the − rail). The ESP32 measures it."
+    : "Off: resistors are not measured before they go on the board, and the board needs no test socket or 10k reference resistor. The board checks still run at every step.";
+  if (!on) return;
+  const reads = s && s.state === "value" ? `Reads ${fmtOhmsLive(s.ohms)}` : "";
+  if (!s || Date.now() - (state.socketAt || 0) > 2000) {
+    box.className = "sock"; box.innerHTML = `<span class="muted">No socket readings from the ESP32</span>`;
+    BB.setSocketPart($("bb"), false);
+    return;
+  }
+  box.className = "sock " + (s.result === "ok" ? "ok" : s.result === "wrong" ? "wrong" : "");
+  const detail = reads ? `<span class="v">${reads} (${s.volts.toFixed(2)} V at GPIO ${state.circuit.layout.socket.pin})</span>` : "";
+  box.innerHTML = escapeHtml(s.message) + detail;
+  // on the resistor drawn in the socket: its standard value (10k), steady, not the live reading
+  BB.setSocketPart($("bb"), s.state === "value", s.state === "value" ? (s.label || fmtOhmsLive(s.ohms)) : "",
+                   s.result === "ok" ? "ok" : s.result === "wrong" ? "bad" : "");
+}
+
+// ---------- rendering ----------
+function renderAll() { renderStages(); renderStatus(); renderBoard(); renderSchematic(); renderLive(); renderHistory(); renderSocket(); }
+
+function renderStages() {
+  const c = state.circuit, s = state.status;
+  const set = (id, cls) => $(id).className = "stage " + cls;
+  set("st1", c ? "done" : "active");
+  if (c) $("st1t").textContent = `${c.name || "circuit"}: ${c.parts.length - 1} parts. Edit in the designer ↗`;
+  set("st2", c ? "done" : "");
+  if (c) $("st2t").textContent = `${c.parts.length} steps solved, ${Object.keys(c.pins).length} test points chosen`;
+  const cur = currentStep(), n = c ? c.parts.length : 0;
+  set("st3", !c ? "" : cur > 1 ? "done" : "active");
+  set("st4", !c ? "" : s && s.complete ? "done" : cur > 1 ? "active" : "");
+  if (c && cur > 1 && !(s && s.complete)) $("st4t").textContent = `Part ${cur - 1} of ${n - 1}: place it, hands off, press Test`;
+  if (s && s.complete) $("st4t").textContent = "Every part passed";
+}
+
+// The exact board to copy: every part in its holes, the current one highlighted.
+function renderBoard() {
+  const c = state.circuit;
+  if (!c || !c.layout) return;
+  const cur = currentStep(), L = c.layout, status = partStatus();
+  const parts = [];
+  // parts a failed check blames, minus the ones the test socket has ruled out
+  const lastResult = relevantResult();
+  const blamed = new Set(lastResult && lastResult.result !== "pass" && lastResult.suspects
+    ? lastResult.suspects.filter(f => !f.ruled_out).map(f => f.part) : []);
+  const problemNodes = lastResult && lastResult.result !== "pass" && lastResult.problem ? lastResult.problem.nodes : [];
+  c.parts.forEach(p => {
+    const st = p.step < cur ? "done" : p.step === cur ? "current" : "future";
+    const [a, b] = L.parts[p.name];
+    if (p.kind === "V") {
+      parts.push({ kind: "P3", a: "esp:3v3", b: a, state: st, suspect: blamed.has(p.name) },
+                 { kind: "PG", a: "esp:gnd", b, state: st, suspect: blamed.has(p.name) });
+    } else {
+      const rst = st !== "done" ? st : status[p.name] === "checked" ? "verified"
+                : status[p.name] === "connected" || status[p.name] === "value" ? "pending" : "done";
+      parts.push({ kind: "R", label: p.value, name: p.name, a, b, state: rst, suspect: blamed.has(p.name) });
+    }
+  });
+  (L.jumpers || []).forEach(j => parts.push({ kind: "W", a: j.holes[0], b: j.holes[1], state: cur === 1 ? "current" : "done" }));
+  const nowPart = c.parts[cur - 1];
+  const sock = L.socket;
+  let socketActive = false;
+  if (sock) {
+    parts.push({ kind: "R", label: BB.fmtOhms(sock.reference_ohms), name: "ref", a: sock.reference[0], b: sock.reference[1],
+                 state: cur === 1 ? "current" : "done" });
+    // a resistor step still waiting for its socket check: the placeholder asks for that value
+    const checked = state.socket && state.socket.part === (nowPart && nowPart.name) && state.socket.result === "ok";
+    if (nowPart && nowPart.kind === "R" && !checked) socketActive = true;
+  }
+  const highlight = !nowPart ? [] : nowPart.kind === "V"
+    ? [...Object.values(L.probes), ...(L.jumpers || []).flatMap(j => j.holes)] : L.parts[nowPart.name];
+  const edit = view.edit ? {
+    onMoveNode: (n, row) => sendLayout({ esp_row: L.place.esp_row, nodes: { ...L.place.nodes, [n]: row }, socket_row: L.place.socket_row }),
+    onMoveEsp: row => sendLayout({ esp_row: row }),  // nodes and test socket re-placed around it
+  } : {};
+  BB.draw($("bb"), { layout: L, parts, problemNodes, probesCurrent: cur === 1, highlight, socketActive, socketHelp: !!sock,
+           socketExpect: nowPart && nowPart.kind === "R" ? nowPart.value : null, ...edit });
+  renderSocket();   // put the live socket reading into the freshly drawn overlay
+  // Rows worth looking at right now: the socket while the part waits to be checked, else the part
+  // (or, in step 1, the ESP32 and its wires).
+  const rows = socketActive ? [sock.column - 1, sock.column + 2]
+    : (nowPart && nowPart.kind !== "V" ? L.parts[nowPart.name] : [...BB.espRows(), ...Object.values(L.probes)])
+        .map(h => typeof h === "number" ? h : Number(h.split(":")[1]));
+  // keep the blamed parts in view too
+  blamed.forEach(n => { if (L.parts[n]) L.parts[n].forEach(h => rows.push(Number(h.split(":")[1]))); });
+  view.focus = rows.length ? [Math.min(...rows), Math.max(...rows)] : null;
+  applyView();
+}
+
+// ---------- zoom and pan ----------
+const view = { follow: true, edit: false, box: null, focus: null };
+function fullBox() { const { W, H } = BB.size(); return [0, 0, W, H]; }
+function applyView() {
+  if (!$("bb").getAttribute("viewBox")) return;
+  if (view.follow && view.focus) {
+    const [W] = [BB.size().W], P = BB.P;
+    let [r1, r2] = view.focus;
+    const mid = (r1 + r2) / 2, half = Math.max(7, (r2 - r1) / 2 + 3);   // at least 14 rows
+    const y1 = BB.rowY(mid - half), y2 = BB.rowY(mid + half);
+    view.box = [0, Math.max(0, y1 - P), W, y2 - y1 + 2 * P];
+  }
+  const b = view.box || fullBox();
+  $("bb").setAttribute("viewBox", b.join(" "));
+  $("z-follow").classList.toggle("on", view.follow);
+  $("z-edit").classList.toggle("on", view.edit);
+}
+function zoom(f, cx, cy) {
+  const [x, y, w, h] = view.box || fullBox(), { W, H } = BB.size();
+  const nw = Math.min(W, Math.max(80, w * f)), nh = Math.min(H, Math.max(80, h * f));
+  cx = cx ?? x + w / 2; cy = cy ?? y + h / 2;
+  view.box = [Math.max(0, Math.min(W - nw, cx - (cx - x) * nw / w)), Math.max(0, Math.min(H - nh, cy - (cy - y) * nh / h)), nw, nh];
+  view.follow = false; applyView();
+}
+$("z-follow").onclick = () => { view.follow = !view.follow; if (!view.follow) view.box = null; applyView(); };
+$("z-all").onclick = () => { view.follow = false; view.box = null; applyView(); };
+$("z-in").onclick = () => zoom(0.7);
+$("z-out").onclick = () => zoom(1 / 0.7);
+$("z-edit").onclick = () => {
+  view.edit = !view.edit;
+  $("bbnote").className = "bbnote";
+  $("bbnote").textContent = view.edit ? "Edit layout: drag the ESP32, or a node by its label on the left, to another row. The laptop checks the move and re-plans the wires." : "";
+  if (view.edit) { view.follow = false; view.box = null; }
+  renderBoard();
+};
+$("z-reset").onclick = () => {
+  if (!confirm("Undo all your layout edits and let the laptop place the ESP32, nodes and test socket again?")) return;
+  view.resetting = true;
+  sendLayout({});   // an empty placement: everything automatic again
+  setTimeout(() => { view.resetting = false; }, 5000);
+};
+$("socket-on").onchange = e => {
+  e.target.disabled = true;   // until the laptop answers with the re-planned board
+  client.publish(T.control, JSON.stringify({ cmd: "set_socket", on: e.target.checked }), { qos: 1 });
+};
+function sendLayout(place) {
+  $("bbnote").className = "bbnote"; $("bbnote").textContent = "Asking the laptop…";
+  client.publish(T.control, JSON.stringify({ cmd: "set_layout", place }), { qos: 1 });
+}
+// wheel to zoom at the cursor, drag the background to pan
+const svgPoint = e => { const svg = $("bb"), pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY; return pt.matrixTransform(svg.getScreenCTM().inverse()); };
+$("bb").addEventListener("wheel", e => { e.preventDefault(); const p = svgPoint(e); zoom(e.deltaY > 0 ? 1.15 : 1 / 1.15, p.x, p.y); }, { passive: false });
+$("bb").addEventListener("pointerdown", e => {
+  if (e.defaultPrevented) return;  // a row drag in edit mode
+  const start = svgPoint(e), b0 = (view.box || fullBox()).slice();
+  const move = ev => {
+    const p = svgPoint(ev), { W, H } = BB.size();
+    b0[0] = Math.max(0, Math.min(W - b0[2], b0[0] - (p.x - start.x)));
+    b0[1] = Math.max(0, Math.min(H - b0[3], b0[1] - (p.y - start.y)));
+    view.box = b0.slice(); view.follow = false; applyView();
+  };
+  const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
+  window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+});
+
+function renderStatus() {
+  const s = state.status, r = relevantResult();
+  if (s) {
+    $("step").textContent = s.complete ? `All ${s.total_steps} steps done` : `Step ${s.step} of ${s.total_steps}`;
+    const broken = s.complete && r && r.result !== "pass";
+    $("instruction").textContent = broken ? "The finished circuit no longer checks out."
+      : s.complete ? "Circuit complete. Every step passed." : (s.placement || s.instruction);
+    $("why").textContent = s.complete ? "" : s.instruction;
+  }
+  $("led").className = "led " + (r ? r.led : (s && s.complete ? "green" : ""));
+  const msg = $("message");
+  msg.className = "message " + (r ? r.result : "");
+  if (r && r.result === "pass" && s && s.complete) {
+    // The last pass may still carry caveats (mistakes the test points cannot rule out): keep them.
+    const caveat = r.message.replace(/^(Step is wired correctly|No problem found)\.?\s*/, "");
+    msg.textContent = `Circuit complete.${caveat ? " " + caveat : ""}`;
+  } else if (r && r.result === "pass" && r.step !== currentStep()) {
+    const caveat = r.message.replace(/^(Step is wired correctly|No problem found)\.?\s*/, "");
+    msg.textContent = `Step ${r.step} passed.${caveat ? " " + caveat + "." : ""} Place the next part, take your hand off, then press Test.`;
+  } else if (r) {
+    // headline, then the suspects below; without suspects the full message says what to do
+    msg.textContent = r.problem && r.suspects && r.suspects.length ? r.problem.headline : r.message;
+  } else if (s && s.complete) {
+    msg.textContent = "Press Test at any time to check the finished board again.";
+  } else {
+    msg.textContent = currentStep() === 1
+      ? "Plug in the wires exactly as shown, take your hand off, then press Test."
+      : "Place the highlighted part, take your hand off the board, then press Test.";
+  }
+  const list = $("also"), sus = r && r.result !== "pass" && r.suspects ? r.suspects : [];
+  list.hidden = !sus.length;
+  list.innerHTML = sus.map(f => `<li class="${f.found ? "found" : f.ruled_out ? "ruled" : ""}">` +
+    `<div>${f.ruled_out ? '<span class="ck">✓</span>' : ""}<span class="lbl">${escapeHtml(f.label)}</span></div>` +
+    `<div class="act">${escapeHtml(f.action || "")}</div></li>`).join("");
+  $("alsotail").hidden = !(sus.length && r.more_same);
+  $("alsotail").textContent = `(${r && r.more_same} other mistakes would read the same)`;
+  $("wrongnote").hidden = !(r && r.result === "fail");
+  $("cont").hidden = !(r && r.problem && r.problem.kind === "resistance" && !(state.status && state.status.complete));
+}
+
+// What the last check said about one node's pull test, if it is the only thing off there.
+function driveNote(node) {
+  const r = relevantResult(), p = r && r.points && r.points[node];
+  if (!p || p.drive_ok !== false || p.behind_expected == null) return null;
+  const k = o => BB.fmtOhms(Number(o.toPrecision(2)));
+  return p.behind_ohms == null ? `voltage ok, but not ${k(p.behind_expected)} behind it`
+                               : `voltage ok, ~${k(p.behind_ohms)} behind it (expected ${k(p.behind_expected)})`;
+}
+
+function renderLive() {
+  const tbody = $("points");
+  const c = state.circuit;
+  if (!c) return;
+  const fresh = liveFresh();
+  const step = Math.min(currentStep(), c.parts.length);
+  const rows = Object.entries(c.pins).map(([pin, node]) => {
+    const p = fresh ? state.live.points[node] : null;
+    const expected = c.expected[String(step)][node];
+    const note = p && p.ok ? driveNote(node) : null;   // a wrong voltage stays red
+    const cls = !p || p.ok == null ? "" : !p.ok ? "bad" : note ? "warn" : "ok";
+    const got = !p ? "–" : p.floating ? "not connected" : fmtV(p.volts);
+    return `<tr><td><i class="dot ${cls}"></i></td><td>${node}</td><td>GPIO ${pin}</td>
+      <td>${got}${note ? `<div class="pnote">${escapeHtml(note)}</div>` : ""}</td><td>${expected == null ? "not connected yet" : fmtV(expected)}</td></tr>`;
+  });
+  tbody.innerHTML = rows.join("");
+  if (!fresh) tbody.insertAdjacentHTML("beforeend",
+    `<tr><td colspan="5" class="empty">No readings from the ESP32 in the last ${STALE_MS / 1000} s</td></tr>`);
+  updateTestPointDots();
+}
+
+function renderHistory() {
+  const ul = $("history");
+  if (!state.history.length) return;
+  ul.innerHTML = state.history.map(h => {
+    const color = { green: "var(--green)", red: "var(--red)", yellow: "var(--yellow)" }[h.led];
+    const time = h.t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    return `<li><span class="t">${time}</span><span style="color:${color};font-weight:600;flex:none">Step ${h.step} ${h.result.toUpperCase()}</span><span>${escapeHtml(h.message)}</span></li>`;
+  }).join("");
+}
+function escapeHtml(s) { return s.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch])); }
+
+// ---------- schematic ----------
+// Layout: every node except ground sits on one row, in the order parts first touch it.
+// Ground is a rail along the bottom. Parts to ground hang straight down; parts between two
+// neighbouring nodes sit on the row; anything else arcs over the top.
+const X0 = 90, DX = 190, TOP = 170, BOT = 400;
+
+function layout(c) {
+  const order = [];
+  c.parts.forEach(p => [p.a, p.b].forEach(n => { if (n !== "gnd" && !order.includes(n)) order.push(n); }));
+  const pos = {};
+  order.forEach((n, i) => pos[n] = { x: X0 + i * DX, y: TOP });
+  const groundCount = {}, pairCount = {};
+  const paths = c.parts.map(p => {
+    if (p.a === "gnd" || p.b === "gnd") {
+      const n = p.a === "gnd" ? p.b : p.a;
+      const k = groundCount[n] = (groundCount[n] ?? -1) + 1;
+      const x = pos[n].x, off = k * 60;
+      const pts = k === 0 ? [[x, TOP], [x, BOT]] : [[x, TOP], [x, TOP + 30], [x + off, TOP + 30], [x + off, BOT]];
+      return { pts, plusAtStart: p.a === n };
+    }
+    const [i, j] = [order.indexOf(p.a), order.indexOf(p.b)];
+    const key = [p.a, p.b].sort().join("|");
+    const k = pairCount[key] = (pairCount[key] ?? -1) + 1;
+    const s = pos[p.a], e = pos[p.b];
+    if (Math.abs(i - j) === 1 && k === 0) return { pts: [[s.x, s.y], [e.x, e.y]], plusAtStart: true };
+    const h = 70 + 62 * k;
+    return { pts: [[s.x, s.y], [s.x, TOP - h], [e.x, TOP - h], [e.x, e.y]], plusAtStart: true };
+  });
+  return { order, pos, paths };
+}
+
+const svgNS = "http://www.w3.org/2000/svg";
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(svgNS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.append(e);
+  return e;
+}
+
+function drawPart(g, part, path) {
+  const pts = path.pts;
+  // Put the symbol on the longest segment of the path.
+  let best = 0, bestLen = 0;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const L = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+    if (L > bestLen) { bestLen = L; best = i; }
+  }
+  const [sx, sy] = pts[best], [ex, ey] = pts[best + 1];
+  const ux = (ex - sx) / bestLen, uy = (ey - sy) / bestLen;
+  const nx = uy, ny = -ux;  // label side: right of vertical parts, above horizontal ones
+  const mx = (sx + ex) / 2, my = (sy + ey) / 2;
+  const half = part.kind === "V" ? 18 : 24;
+
+  const wire = [...pts.slice(0, best + 1), [mx - ux * half, my - uy * half]];
+  const wire2 = [[mx + ux * half, my + uy * half], ...pts.slice(best + 1)];
+  [wire, wire2].forEach(w => el("polyline", { points: w.map(p => p.join(",")).join(" "), fill: "none" }, g));
+
+  if (part.kind === "V") {
+    el("circle", { cx: mx, cy: my, r: half }, g).setAttribute("fill", "var(--card)");
+    const sgn = path.plusAtStart ? -1 : 1;
+    const t1 = el("text", { x: mx + sgn * ux * 8, y: my + sgn * uy * 8 + 5, "text-anchor": "middle", class: "sym" }, g);
+    t1.textContent = "+";
+    const t2 = el("text", { x: mx - sgn * ux * 8, y: my - sgn * uy * 8 + 5, "text-anchor": "middle", class: "sym" }, g);
+    t2.textContent = "−";
+  } else {
+    const zz = [[mx - ux * half, my - uy * half]];
+    for (let i = 0; i < 6; i++) {
+      const t = -half + (i + 0.5) * (2 * half / 6), a = i % 2 ? -8 : 8;
+      zz.push([mx + ux * t + nx * a, my + uy * t + ny * a]);
+    }
+    zz.push([mx + ux * half, my + uy * half]);
+    el("polyline", { points: zz.map(p => p.join(",")).join(" "), fill: "none" }, g);
+  }
+  const anchor = Math.abs(nx) > 0.5 ? (nx > 0 ? "start" : "end") : "middle";
+  const lx = mx + nx * 26, ly = my + ny * 26 + (Math.abs(ny) > 0.5 ? 0 : -2);
+  const name = el("text", { x: lx, y: ly, "text-anchor": anchor, class: "plabel" }, g);
+  name.textContent = part.name;
+  const val = el("text", { x: lx, y: ly + 16, "text-anchor": anchor, class: "pvalue" }, g);
+  val.textContent = part.value;
+}
+
+let dotEls = {};
+function renderSchematic() {
+  const c = state.circuit;
+  if (!c) return;
+  const { order, pos, paths } = layout(c);
+  const cur = currentStep();
+  const r = relevantResult();
+  const first = r && r.suspects && r.suspects.find(f => !f.ruled_out);
+  const suspect = first ? first.part : null;
+  const status = partStatus();
+
+  const width = X0 + (order.length - 1) * DX + 170;
+  const highest = Math.min(TOP, ...paths.flatMap(p => p.pts.map(q => q[1])));
+  const top = highest - 60;
+  const svg = el("svg", { viewBox: `0 ${top} ${width} ${BOT + 50 - top}`, role: "img", "aria-label": "Circuit schematic" });
+  el("style", {}, svg).textContent = `
+    polyline, line, circle.wire { stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+    .sym { font-size: 17px; font-weight: 700; }
+    .plabel { font-size: 17px; font-weight: 700; } .pvalue { font-size: 15px; fill: var(--muted); }
+    .nlabel { font-size: 16px; fill: var(--muted); font-weight: 700; }
+    .tp { font-size: 14px; font-variant-numeric: tabular-nums; }`;
+
+  // Ground rail
+  const rail = el("g", { stroke: "var(--wire)", fill: "var(--wire)" }, svg);
+  el("line", { x1: X0 - 40, y1: BOT, x2: width - 50, y2: BOT }, rail);
+  [[16, 0], [10, 6], [4, 12]].forEach(([w, dy]) =>
+    el("line", { x1: X0 - 40 - w, y1: BOT + 14 + dy, x2: X0 - 40 + w, y2: BOT + 14 + dy }, rail));
+  el("line", { x1: X0 - 40, y1: BOT, x2: X0 - 40, y2: BOT + 14 }, rail);
+  const gl = el("text", { x: X0 - 40, y: BOT + 46, "text-anchor": "middle", class: "nlabel", stroke: "none" }, rail);
+  gl.textContent = "GND";
+
+  c.parts.forEach((p, i) => {
+    const conf = status[p.name];
+    let color = p.step >= cur ? "var(--wire)" : conf === "checked" ? "var(--green)"
+              : conf === "connected" || conf === "value" ? "var(--yellow)" : "var(--wire)", extra = {};
+    if (p.step > cur) { color = "var(--faded)"; extra["stroke-dasharray"] = "5 5"; }
+    if (p.step === cur) { color = "var(--accent)"; }
+    if (p.name === suspect) { color = "var(--red)"; extra.class = ""; }
+    const g = el("g", { stroke: color, fill: color, ...extra }, svg);
+    drawPart(g, p, paths[i]);
+    g.querySelectorAll("text").forEach(t => { t.setAttribute("stroke", "none"); if (!t.classList.contains("pvalue")) t.setAttribute("fill", color); });
+    g.querySelectorAll("polyline").forEach(l => l.setAttribute("fill", "none"));
+    if (p.step === cur || p.name === suspect) g.querySelectorAll("polyline, circle").forEach(l => l.setAttribute("stroke-width", 3.2));
+  });
+
+  // Nodes and test points
+  dotEls = {};
+  const pinOf = Object.fromEntries(Object.entries(c.pins).map(([pin, node]) => [node, pin]));
+  order.forEach(n => {
+    const { x, y } = pos[n];
+    const lbl = el("text", { x: x - 14, y: y - 12, "text-anchor": "end", class: "nlabel" }, svg);
+    lbl.textContent = n;
+    if (pinOf[n]) {
+      const dot = el("circle", { cx: x, cy: y, r: 11, fill: "var(--grey)", stroke: "var(--card)", "stroke-width": 3 }, svg);
+      const tx = el("text", { x: x + 14, y: y + 28, class: "tp", fill: "var(--ink)" }, svg);
+      const ex = el("text", { x: x + 14, y: y + 46, class: "tp", fill: "var(--muted)" }, svg);
+      dotEls[n] = { dot, tx, ex, pin: pinOf[n] };
+    } else {
+      el("circle", { cx: x, cy: y, r: 5, fill: "var(--wire)" }, svg);
+    }
+  });
+
+  const wrap = $("svgwrap");
+  wrap.innerHTML = "";
+  wrap.append(svg);
+  updateTestPointDots();
+}
+
+function updateTestPointDots() {
+  const c = state.circuit;
+  if (!c) return;
+  const step = Math.min(currentStep(), c.parts.length);
+  const fresh = liveFresh();
+  for (const [node, d] of Object.entries(dotEls)) {
+    const p = fresh ? state.live.points[node] : null;
+    const expected = c.expected[String(step)][node];
+    d.dot.setAttribute("fill", !p || p.ok == null ? "var(--grey)" : !p.ok ? "var(--red)"
+                              : driveNote(node) ? "var(--yellow)" : "var(--green)");
+    d.tx.textContent = `GPIO ${d.pin}: ${!p ? "no reading" : p.floating ? "not connected" : fmtV(p.volts)}`;
+    d.ex.textContent = expected == null ? "not connected yet" : `expect ${fmtV(expected)}`;
+  }
+}
+</script>
+</body>
+</html>
