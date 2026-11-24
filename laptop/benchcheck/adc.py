@@ -1,3 +1,4 @@
+# AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 """What the ESP32-S3's ADC can see.
 
 The bench node is an ESP32-S3-DevKitC-1. Only ADC1 works while Wi-Fi is on; on the S3 that is

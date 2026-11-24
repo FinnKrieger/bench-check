@@ -1,3 +1,4 @@
+# AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 """Turn a circuit into a simple breadboard layout: which hole every leg and wire goes in.
 
 Breadboard model (same as the simulator page): 60 numbered rows, each a strip of five connected

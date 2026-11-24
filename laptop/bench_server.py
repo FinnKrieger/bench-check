@@ -1,3 +1,4 @@
+# AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 """Laptop node: receives readings over MQTT, checks each build step, sends the result back.
 
     python bench_server.py                        # the circuit you used last (the demo the first time)

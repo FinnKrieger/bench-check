@@ -1,3 +1,4 @@
+/* AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README. */
 /* Bench Check bench node: reads the ADC1 pins and talks to the laptop over MQTT. */
 #pragma once
 

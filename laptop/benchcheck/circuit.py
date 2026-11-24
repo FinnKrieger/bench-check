@@ -1,3 +1,4 @@
+# AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 """Read a circuit file and solve it for node voltages (nodal analysis).
 
 Only resistors (R...) and DC voltage sources (V...) are supported, so the circuit is linear and

@@ -1,3 +1,4 @@
+# AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 """Raw ESP32 ADC counts -> volts.
 
 calibration.json holds measured points [[raw, volts], ...] (ESP32 reading vs multimeter).

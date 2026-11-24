@@ -1,3 +1,4 @@
+/* AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README. */
 /* Bench Check bench node.
  *
  * The ESP32 does not know the circuit. Five times a second it reads every ADC1 pin the bench uses

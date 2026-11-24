@@ -1,3 +1,4 @@
+# AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 """Decide pass / fail / unsure for one build step, and find the most likely mistake."""
 
 import math

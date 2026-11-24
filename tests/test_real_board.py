@@ -1,3 +1,4 @@
+# AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 """Regression test from real data: ten readings from the ESP32 at step 8 of the 9-resistor circuit
 (tests/data/finn-test.cir), every part correct, and that board's real pull calibration.
 

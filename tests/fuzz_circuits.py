@@ -1,3 +1,4 @@
+# AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 """Stress test: generate many circuits, plan them, and check every step and every mistake.
 
     .venv/bin/python tests/fuzz_circuits.py            # 300 random circuits plus edge cases

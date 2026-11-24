@@ -1,3 +1,4 @@
+// AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 // Breadboard geometry and drawing, shared by the dashboard (the layout to copy) and the
 // simulator page (the board you build). Drawn like the real board on the bench: standing up,
 // rows 1-60 from top to bottom, the a-e half with its + and - rails on the left, the f-j half with

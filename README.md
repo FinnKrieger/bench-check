@@ -362,6 +362,31 @@ Each pair is (ESP32 raw reading, multimeter volts).
 
 ## External libraries
 
-- paho-mqtt (MQTT client)
-- numpy (solving the circuit equations)
-- Mosquitto (MQTT broker)
+Laptop (Python 3.12, installed from `requirements.txt`):
+
+- paho-mqtt 2.x: MQTT client for the laptop node and the fake ESP32
+- numpy: solving the circuit equations
+
+Web pages:
+
+- mqtt.js 5.10.1 (loaded from the jsDelivr CDN): MQTT over WebSockets in the browser
+
+ESP32-S3 firmware:
+
+- ESP-IDF 6.0 (Espressif's SDK: Wi-Fi, ADC, GPIO, FreeRTOS)
+- espressif/mqtt (ESP-MQTT), the MQTT client, as an ESP-IDF managed component
+
+Tools:
+
+- Mosquitto: the MQTT broker on the laptop (TCP for the ESP32, WebSockets for the pages)
+
+Everything else uses only the Python standard library (sqlite3, json, http.server) or plain
+JavaScript. `board_sensors`, `led` and `wifi_station` in `esp32/bench_node/main/` are the
+course's Lab 04 starter code.
+
+## Use of AI tools
+
+We used Claude Code (Anthropic), an AI coding assistant, throughout the project. It wrote a large
+share of the code from our designs, descriptions and test results on the real board, and helped
+debug and review it. Every file it helped write starts with a one-line comment saying so. We
+chose the design, decided what to build, and tested the system on the real ESP32 and breadboard.

@@ -1,3 +1,4 @@
+# AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 """Fake ESP32: pretends to be the bench node, so the laptop side can be built without hardware.
 
 It simulates the breadboard you are building (with an optional mistake), and sends exactly what

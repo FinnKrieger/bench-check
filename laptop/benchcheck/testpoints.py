@@ -1,3 +1,4 @@
+# AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 """Simulate every mistake at every step, then choose the nodes worth measuring."""
 
 from itertools import combinations

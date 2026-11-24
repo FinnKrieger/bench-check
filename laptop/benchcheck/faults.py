@@ -1,3 +1,4 @@
+# AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 """Likely wiring mistakes, and the circuit you get when one of them happens."""
 
 from dataclasses import dataclass, replace

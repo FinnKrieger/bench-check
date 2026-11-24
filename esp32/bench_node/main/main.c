@@ -1,3 +1,4 @@
+/* AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README. */
 /* Bench Check bench node: ESP32-S3-DevKitC-1.
  *
  *   NVS -> LED (blue while connecting) -> Wi-Fi -> bench (ADC + MQTT + readings) -> BOOT button

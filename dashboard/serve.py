@@ -1,3 +1,4 @@
+# AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 """Serve the web pages (dashboard, designer, breadboard sim) without browser caching.
 
     python3 dashboard/serve.py          # http://localhost:8250

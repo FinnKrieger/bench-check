@@ -1,3 +1,4 @@
+# AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 """Event store: every reading and every check, with a timestamp, in SQLite."""
 
 import json

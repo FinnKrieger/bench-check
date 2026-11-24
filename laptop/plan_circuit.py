@@ -1,3 +1,4 @@
+# AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 """Solve a circuit file, choose the test points, and print the plan. Writes nothing.
 
     python plan_circuit.py ../circuits/demo.cir

@@ -1,3 +1,4 @@
+# AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 """Plan a circuit in one go: test points, breadboard layout, and what can and cannot be checked.
 
 Used by the laptop node at start-up, when the designer hands over a new circuit, and for the

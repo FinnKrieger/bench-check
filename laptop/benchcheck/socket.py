@@ -1,3 +1,4 @@
+# AI help: written with the help of Claude Code (Anthropic), an AI coding assistant. See README.
 """The resistor test socket: read a resistor's value before it goes on the board.
 
     + rail -- reference resistor (REFERENCE_OHMS) --+-- ESP32 pin
