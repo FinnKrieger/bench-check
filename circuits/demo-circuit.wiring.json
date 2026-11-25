@@ -1,0 +1,19 @@
+{
+  "circuit": "demo-circuit.cir",
+  "tolerance": 0.15,
+  "pins": {
+    "6": "a",
+    "4": "vcc"
+  },
+  "socket": true,
+  "socket_pin": "10",
+  "keep_wires": false,
+  "place": {
+    "esp_row": 1,
+    "nodes": {
+      "a": 6
+    },
+    "socket_row": 30
+  },
+  "layout_version": 2
+}

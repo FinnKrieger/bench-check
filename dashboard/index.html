@@ -130,6 +130,7 @@
     <div class="bbtools">
       <button id="z-follow" class="on" title="Zoom to the holes for this step">Follow step</button>
       <button id="z-all">Whole board</button>
+      <button id="z-sock">Test socket</button>
       <button id="z-in" title="Zoom in">+</button>
       <button id="z-out" title="Zoom out">−</button>
       <span style="flex:1"></span>
@@ -440,10 +441,11 @@ function renderBoard() {
   BB.draw($("bb"), { layout: L, parts, problemNodes, probesCurrent: cur === 1, highlight, socketActive, socketHelp: !!sock,
            socketExpect: nowPart && nowPart.kind === "R" ? nowPart.value : null, ...edit });
   renderSocket();   // put the live socket reading into the freshly drawn overlay
-  // Rows worth looking at right now: the socket while the part waits to be checked, else the part
-  // (or, in step 1, the ESP32 and its wires).
-  const rows = socketActive ? [sock.column - 1, sock.column + 2]
-    : (nowPart && nowPart.kind !== "V" ? L.parts[nowPart.name] : [...BB.espRows(), ...Object.values(L.probes)])
+  // Rows worth looking at right now: the part (or, in step 1, the ESP32 and its wires).
+  // The test socket has its own button, so following a step never jumps there.
+  view.socketRows = sock ? [sock.column - 1, sock.column + 2] : null;
+  $("z-sock").hidden = !sock;
+  const rows = (nowPart && nowPart.kind !== "V" ? L.parts[nowPart.name] : [...BB.espRows(), ...Object.values(L.probes)])
         .map(h => typeof h === "number" ? h : Number(h.split(":")[1]));
   // keep the blamed parts in view too
   blamed.forEach(n => { if (L.parts[n]) L.parts[n].forEach(h => rows.push(Number(h.split(":")[1]))); });
@@ -456,17 +458,17 @@ const view = { follow: true, edit: false, box: null, focus: null };
 function fullBox() { const { W, H } = BB.size(); return [0, 0, W, H]; }
 function applyView() {
   if (!$("bb").getAttribute("viewBox")) return;
-  if (view.follow && view.focus) {
-    const [W] = [BB.size().W], P = BB.P;
-    let [r1, r2] = view.focus;
-    const mid = (r1 + r2) / 2, half = Math.max(7, (r2 - r1) / 2 + 3);   // at least 14 rows
-    const y1 = BB.rowY(mid - half), y2 = BB.rowY(mid + half);
-    view.box = [0, Math.max(0, y1 - P), W, y2 - y1 + 2 * P];
-  }
+  if (view.follow && view.focus) view.box = rowsBox(view.focus);
   const b = view.box || fullBox();
   $("bb").setAttribute("viewBox", b.join(" "));
   $("z-follow").classList.toggle("on", view.follow);
   $("z-edit").classList.toggle("on", view.edit);
+}
+function rowsBox([r1, r2]) {   // a full-width box around rows r1..r2, at least 14 rows tall
+  const W = BB.size().W, P = BB.P;
+  const mid = (r1 + r2) / 2, half = Math.max(7, (r2 - r1) / 2 + 3);
+  const y1 = BB.rowY(mid - half), y2 = BB.rowY(mid + half);
+  return [0, Math.max(0, y1 - P), W, y2 - y1 + 2 * P];
 }
 function zoom(f, cx, cy) {
   const [x, y, w, h] = view.box || fullBox(), { W, H } = BB.size();
@@ -477,6 +479,10 @@ function zoom(f, cx, cy) {
 }
 $("z-follow").onclick = () => { view.follow = !view.follow; if (!view.follow) view.box = null; applyView(); };
 $("z-all").onclick = () => { view.follow = false; view.box = null; applyView(); };
+$("z-sock").onclick = () => {
+  if (!view.socketRows) return;
+  view.follow = false; view.box = rowsBox(view.socketRows); applyView();
+};
 $("z-in").onclick = () => zoom(0.7);
 $("z-out").onclick = () => zoom(1 / 0.7);
 $("z-edit").onclick = () => {

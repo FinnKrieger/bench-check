@@ -208,7 +208,7 @@ class BenchServer:
             return
 
         name = re.sub(r"[^a-z0-9_-]+", "-", str(data.get("name", "")).lower()).strip("-") or "design"
-        path = self.path.parent / f"{name}.cir"
+        path = CIRCUITS / f"{name}.cir"   # always in circuits/, never next to a test file
         old = path.read_text() if path.exists() else None
         path.write_text(data["cir"])
         try:

@@ -614,13 +614,16 @@ def make_layout(circuit, pins, socket_pin=None, place=None):
         for p in circuit.parts:
             if p.kind == "V":
                 parts[p.name] = [power["3v3"], power["gnd"]]
-            elif p.a in rails and p.b in rails:    # straight across the rails, in a spare row
+            elif p.a in rails and p.b in rails:    # from the + rail a few rows down to the - rail, so it looks like a part
                 start = max(unit, default=top + FIRST_GAP) + 2
-                ok = lambda c: (c not in res and c not in unit and board.free(f"+:{c}") and board.free(f"-:{c}"))
+                span = 4                           # rows between its legs: long enough to read as a resistor
+                ok = lambda c: (c + span <= COLUMNS and c not in res and c not in unit
+                                and board.free(f"+:{c}") and board.free(f"-:{c + span}"))
                 col = next((c for c in [*range(start, COLUMNS + 1), *range(1, start)] if ok(c)), None)
                 if col is None:
                     raise LayoutError("no free row for a part across the rails")
-                parts[p.name] = [board.take(f"{rails[n]}:{col}") for n in (p.a, p.b)]
+                ends = {"+": f"+:{col}", "-": f"-:{col + span}"}
+                parts[p.name] = [board.take(ends[rails[n]]) for n in (p.a, p.b)]
 
         return best[1], {"supply": supply, "node_columns": node_col, "power": power, "probes": probes,
                 "parts": {p.name: parts[p.name] for p in circuit.parts},

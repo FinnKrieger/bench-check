@@ -1,0 +1,6 @@
+# Demo circuit for the video: two nodes, four resistors, every value checkable.
+V1  vcc  gnd  3.3    # Connect the ESP32's 3.3 V and GND pins to the breadboard rails
+R1  vcc  a    1k     # R1 (1k) from 3.3 V to node A
+R2  a    gnd  1k     # R2 (1k) from node A to GND
+R3  a    b    4.7k   # R3 (4.7k) from node A to node B
+R4  b    gnd  10k    # R4 (10k) from node B to GND

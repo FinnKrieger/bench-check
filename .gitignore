@@ -21,3 +21,9 @@ esp32/bench_node_firmware.zip
 
 # Course handout (not ours to publish)
 docs/assignment-brief.pdf
+
+# Personal setup notes (not for submission)
+SETUP-NOTES.md
+
+# Video footage and edits (large files, not for git)
+video/
