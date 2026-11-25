@@ -27,3 +27,7 @@ SETUP-NOTES.md
 
 # Video footage and edits (large files, not for git)
 video/
+
+# Final submission bundle (built locally) and Word lock files
+submission/
+~$*
