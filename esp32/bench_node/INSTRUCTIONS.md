@@ -49,7 +49,9 @@ Edit `main/credentials.h`. Ask the human for:
 - `WIFI_SSID` and `WIFI_PASSWORD`: a **2.4 GHz WPA2-PSK** network, usually a phone hotspot.
   USC's eduroam (WPA2-Enterprise) does **not** work.
 - `MQTT_BROKER_URI`: `mqtt://<laptop IP>:<port>`, the laptop running Mosquitto on the same
-  network. macOS: `ipconfig getifaddr en0`. Port 1883 by default; Finn's Mac uses 1884.
+  network. macOS: `ipconfig getifaddr en0`. Windows: `ipconfig`, the "IPv4 Address" under the
+  Wi-Fi adapter. Port 1883 by default; Finn's Mac uses 1884, and Windows uses 1884 because the
+  Mosquitto installer's own Windows service already holds 1883 (see the README's Windows setup).
 
 Do not commit, upload or send `credentials.h` once it holds real values.
 

@@ -20,11 +20,66 @@ messages.
 
 ## Setup (once)
 
+Follow the part for your computer. The commands later in this README are written for macOS;
+on Windows, swap them using the table at the end of the Windows part.
+
+### macOS
+
 ```bash
 brew install mosquitto
-cd Final_Project
+cd bench-check
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
+```
+
+Use port 1883 (`mosquitto.conf`), unless something else already holds it (see below).
+
+### Windows
+
+In PowerShell:
+
+```powershell
+winget install EclipseFoundation.Mosquitto
+winget install Python.Python.3.12
+cd bench-check
+py -3.12 -m venv .venv
+.\.venv\Scripts\python -m pip install -r requirements.txt
+```
+
+Two things differ from macOS:
+
+- **Use port 1884.** The Mosquitto installer also starts a Mosquitto Windows service on port 1883
+  that only listens on this computer, so the ESP32 cannot reach it and `mosquitto.conf` cannot
+  start. Run the broker with `mosquitto-1884.conf` and pass `--port 1884` to `bench_server.py` and
+  `fake_esp32.py`. (Or stop the service from an administrator PowerShell with
+  `Stop-Service mosquitto` and use 1883 as on macOS.)
+- **Mosquitto is not on the PATH.** Call it by its full path,
+  `& "C:\Program Files\mosquitto\mosquitto.exe"`.
+
+When Windows Firewall asks about `mosquitto.exe` or `python.exe`, allow **private networks**
+only. The real ESP32 needs this to reach the broker; the fake ESP32 and the simulator do not.
+
+Windows versions of the commands in this README:
+
+| macOS | Windows (PowerShell) |
+|---|---|
+| `mosquitto -c mosquitto.conf` | `& "C:\Program Files\mosquitto\mosquitto.exe" -c mosquitto-1884.conf` |
+| `.venv/bin/python` (from the repo folder) | `.\.venv\Scripts\python` |
+| `../.venv/bin/python` (from `laptop/` or `esp32_sim/`) | `..\.venv\Scripts\python` |
+| `python3 dashboard/serve.py` | `.\.venv\Scripts\python dashboard\serve.py` |
+| `../circuits/demo.cir` | `..\circuits\demo.cir` |
+| `--port 1883` (the default) | `--port 1884` |
+| `ipconfig getifaddr en0` | `ipconfig`, then the "IPv4 Address" under the Wi-Fi adapter |
+| `. ~/.espressif/v6.0.2/esp-idf/export.sh` | Open the "ESP-IDF PowerShell" that Espressif's installer creates |
+| `idf.py build flash monitor` | `idf.py -p COM5 build flash monitor` (the COM port from Device Manager) |
+
+For example, the fake-ESP32 run below becomes:
+
+```powershell
+& "C:\Program Files\mosquitto\mosquitto.exe" -c mosquitto-1884.conf      # terminal 1
+cd laptop;    ..\.venv\Scripts\python bench_server.py ..\circuits\demo.cir --port 1884   # terminal 2
+cd esp32_sim; ..\.venv\Scripts\python fake_esp32.py ..\circuits\demo.cir --port 1884     # terminal 3
+.\.venv\Scripts\python dashboard\serve.py                                 # terminal 4
 ```
 
 ## How a build works
@@ -67,7 +122,8 @@ reported as "something is wrong".
 
 ## Run with the fake ESP32
 
-Use four terminals, all starting in `Final_Project`.
+Use four terminals, all starting in the `bench-check` folder. On Windows, use the commands from
+the Windows setup part above.
 
 1. Start the MQTT broker:
    ```bash
@@ -283,10 +339,15 @@ button is the Test button; the onboard LED shows the result (blue = connecting, 
 white = checking, then green / red / yellow).
 
 1. **Network.** Put the laptop and the ESP32 on the same 2.4 GHz WPA2 network (a phone hotspot;
-   eduroam does not work). Find the laptop's IP with `ipconfig getifaddr en0`.
+   eduroam does not work). Find the laptop's IP with `ipconfig getifaddr en0` (macOS), or run
+   `ipconfig` and read the "IPv4 Address" under the Wi-Fi adapter (Windows).
 2. **Broker.** Start Mosquitto so the board can reach it (port 1884 here, because a UTM VM holds
-   1883 on this Mac): `mosquitto -c mosquitto-1884.conf`. Allow incoming connections for
-   mosquitto if macOS asks.
+   1883 on this Mac, and the Mosquitto service holds it on Windows):
+   `mosquitto -c mosquitto-1884.conf` (macOS) or
+   `& "C:\Program Files\mosquitto\mosquitto.exe" -c mosquitto-1884.conf` (Windows). Allow incoming
+   connections for mosquitto if macOS asks; on Windows, allow it on private networks only. On
+   Windows, also set the hotspot connection to "Private" in Wi-Fi settings, or the firewall blocks
+   the board.
 3. **Firmware.** Copy `esp32/bench_node/main/credentials.example.h` to `credentials.h` in the same
    folder (git ignores it) and fill in the Wi-Fi name, password, and `mqtt://<laptop IP>:1884`, then:
    ```bash
@@ -294,6 +355,13 @@ white = checking, then green / red / yellow).
    cd esp32/bench_node
    idf.py build flash monitor
    ```
+   On Windows, open the "ESP-IDF PowerShell" from Espressif's installer instead of running
+   `export.sh`, find the board's COM port in Device Manager ("Ports (COM & LPT)"), and run:
+   ```powershell
+   cd esp32\bench_node
+   idf.py -p COM5 build flash monitor
+   ```
+   (`esp32/bench_node/INSTRUCTIONS.md` covers installing ESP-IDF on both systems.)
    The log should end with "connected to the broker" and "ready: press BOOT". If the LED stays
    dark, check `LED_GPIO` in `main/led.h` (48 on board v1.0, 38 on v1.1 and later).
 4. **Laptop.** `bench_server.py ../circuits/demo.cir --port 1884`, then open the dashboard.
